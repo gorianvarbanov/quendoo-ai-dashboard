@@ -4,7 +4,7 @@ import { ref } from 'vue'
 export const useSettingsStore = defineStore('settings', () => {
   // State
   const anthropicApiKey = ref('')
-  const mcpClientUrl = ref('http://localhost:3100')
+  const mcpClientUrl = ref('https://quendoo-backend-222402522800.us-central1.run.app')
   const mcpServerUrl = ref('https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse')
   const theme = ref('light')
   const autoScroll = ref(true)
@@ -18,7 +18,7 @@ export const useSettingsStore = defineStore('settings', () => {
       if (stored) {
         const settings = JSON.parse(stored)
         anthropicApiKey.value = settings.anthropicApiKey || ''
-        mcpClientUrl.value = settings.mcpClientUrl || 'http://localhost:3100'
+        mcpClientUrl.value = settings.mcpClientUrl || 'https://quendoo-backend-222402522800.us-central1.run.app'
         mcpServerUrl.value = settings.mcpServerUrl || 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
         theme.value = settings.theme || 'light'
         autoScroll.value = settings.autoScroll !== false
@@ -78,7 +78,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // Reset to defaults
   const resetToDefaults = () => {
     anthropicApiKey.value = ''
-    mcpClientUrl.value = 'http://localhost:3100'
+    mcpClientUrl.value = 'https://quendoo-backend-222402522800.us-central1.run.app'
     mcpServerUrl.value = 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
     theme.value = 'light'
     autoScroll.value = true

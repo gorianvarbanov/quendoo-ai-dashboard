@@ -478,7 +478,7 @@ const testConnection = async () => {
 const resetAllSettings = () => {
   settingsStore.resetToDefaults()
   apiKey.value = ''
-  mcpClientUrl.value = 'http://localhost:3100'
+  mcpClientUrl.value = 'https://quendoo-backend-222402522800.us-central1.run.app'
   mcpServerUrl.value = 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
   theme.value = 'light'
   autoScroll.value = true

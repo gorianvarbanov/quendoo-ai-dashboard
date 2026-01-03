@@ -76,13 +76,18 @@ export const chatApi = {
    * @returns {Promise<Object>} Response with conversation ID and AI response
    */
   async sendMessage(content, conversationId = null, serverId = null, model = null) {
-    const response = await apiClient.post('/chat/send', {
-      content,
+    const response = await apiClient.post('/chat/quendoo', {
+      message: content,
       conversationId,
       serverId,
       model
     })
-    return response.data
+
+    // Transform response to match expected format
+    return {
+      status: 'success',
+      response: response.data.response
+    }
   },
 
   /**

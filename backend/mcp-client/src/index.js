@@ -15,8 +15,19 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3100;
 
+// Configure CORS
+const corsOptions = {
+  origin: process.env.CORS_ALLOWED_ORIGINS
+    ? process.env.CORS_ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : '*',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+console.log('CORS configuration:', corsOptions);
+
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Initialize MCP Client Manager

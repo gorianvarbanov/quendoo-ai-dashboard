@@ -156,13 +156,13 @@ const sidebarOpen = ref(window.innerWidth > 1024)
 
 // Model mapping - display names to API model IDs
 const modelMap = {
-  'Claude Sonnet 4.5': 'claude-3-5-sonnet-20241022',
-  'Claude Opus 4.5': 'claude-opus-4-20250514',
-  'Claude Haiku 4': 'claude-3-5-haiku-20241022'
+  'Claude Sonnet 3.5': 'claude-3-5-sonnet-20240620',
+  'Claude Opus 3': 'claude-3-opus-20240229',
+  'Claude Haiku 3.5': 'claude-3-5-haiku-20241022'
 }
 
 const models = ref(Object.keys(modelMap))
-const selectedModel = ref('Claude Sonnet 4.5')
+const selectedModel = ref('Claude Sonnet 3.5')
 
 // Watch for model changes and update store
 watch(selectedModel, (newDisplayName) => {

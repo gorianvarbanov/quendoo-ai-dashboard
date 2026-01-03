@@ -16,7 +16,7 @@ export const useChatStore = defineStore('chat', () => {
   const streamingMessage = ref('')
   const isStreaming = ref(false)
   const error = ref(null)
-  const selectedModel = ref('claude-3-5-sonnet-20241022') // Default model
+  const selectedModel = ref('claude-3-5-sonnet-20240620') // Default model
 
   // Load from localStorage on init
   function loadFromStorage() {
