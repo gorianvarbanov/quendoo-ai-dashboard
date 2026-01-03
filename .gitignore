@@ -1,0 +1,54 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env
+frontend/.env.local
+frontend/.env.*.local
+frontend/.DS_Store
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Backend - Node.js MCP Client
+backend/mcp-client/node_modules/
+backend/mcp-client/.env
+backend/mcp-client/.env.local
+backend/mcp-client/npm-debug.log*
+
+# Backend - PHP
+backend/vendor/
+backend/storage/logs/*.log
+backend/storage/sessions/*
+backend/storage/cache/*
+!backend/storage/.gitkeep
+backend/.env
+backend/.env.local
+backend/composer.phar
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# PM2
+.pm2/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Backup files
+*.bak
+*.backup

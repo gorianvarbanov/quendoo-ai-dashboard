@@ -1,0 +1,5 @@
+project 
+design of a AI chatbod dashboard for enbeding in quendoo dashboard
+we need a dashboard similar to the calude dsahborad that allows communiccation with MCP servers 
+We prefer vuetify and php as progarming languages
+Link to one of MCP we will need to use: https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse
