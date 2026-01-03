@@ -52,3 +52,6 @@ logs/
 # Backup files
 *.bak
 *.backup
+
+# Claude settings (contains API keys)
+.claude/settings.local.json
