@@ -73,6 +73,14 @@
           rounded="lg"
           class="mb-1"
         />
+        <v-list-item
+          :to="'/admin/integration'"
+          prepend-icon="mdi-puzzle"
+          title="Integration"
+          value="integration"
+          rounded="lg"
+          class="mb-1"
+        />
 
         <v-divider class="my-3" />
 

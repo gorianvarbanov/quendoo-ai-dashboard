@@ -88,6 +88,20 @@ const router = createRouter({
           next('/admin/login')
         }
       }
+    },
+    {
+      path: '/admin/integration',
+      name: 'admin-integration',
+      component: () => import('../views/admin/AdminIntegration.vue'),
+      beforeEnter: async (to, from, next) => {
+        const authStore = useAuthStore()
+        const isAuthenticated = await authStore.verifyAuthentication()
+        if (isAuthenticated) {
+          next()
+        } else {
+          next('/admin/login')
+        }
+      }
     }
   ]
 })

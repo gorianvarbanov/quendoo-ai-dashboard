@@ -82,6 +82,13 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings()
   }
 
+  // Set Quendoo API key (alias for PostMessage integration)
+  const setQuendooApiKey = (key) => {
+    console.log('[Settings] Setting Quendoo API key via PostMessage')
+    quendooApiKey.value = key
+    saveSettings()
+  }
+
   // Update MCP client URL
   const updateMcpClientUrl = (url) => {
     mcpClientUrl.value = url
@@ -183,6 +190,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings,
     updateApiKey,
     updateQuendooApiKey,
+    setQuendooApiKey,
     updateMcpClientUrl,
     updateMcpServerUrl,
     updateSystemPrompt,

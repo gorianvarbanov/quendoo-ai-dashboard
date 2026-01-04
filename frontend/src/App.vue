@@ -1,7 +1,95 @@
 <script setup>
+import { onMounted, onUnmounted } from 'vue'
 import { useTheme } from 'vuetify'
+import { useSettingsStore } from '@/stores/settingsStore'
 
 const theme = useTheme()
+const settingsStore = useSettingsStore()
+
+// PostMessage listener for Quendoo integration
+const handlePostMessage = (event) => {
+  // Security: Only accept messages from trusted origins
+  const trustedOrigins = [
+    'https://quendoo.com',
+    'https://www.quendoo.com',
+    'https://admin.quendoo.com',
+    'http://localhost',
+    'http://localhost:8080',
+    'http://localhost:3000'
+  ]
+
+  // Check if origin is trusted
+  const isTrusted = trustedOrigins.some(origin => event.origin.startsWith(origin))
+
+  if (!isTrusted) {
+    console.warn('[PostMessage] Rejected message from untrusted origin:', event.origin)
+    return
+  }
+
+  // Handle different message types
+  if (event.data && typeof event.data === 'object') {
+    switch (event.data.type) {
+      case 'QUENDOO_API_KEY':
+        console.log('[PostMessage] Received Quendoo API key from parent window')
+        if (event.data.apiKey) {
+          settingsStore.setQuendooApiKey(event.data.apiKey)
+          console.log('[PostMessage] Quendoo API key saved successfully')
+
+          // Send confirmation back to parent
+          if (event.source) {
+            event.source.postMessage({
+              type: 'QUENDOO_API_KEY_RECEIVED',
+              success: true
+            }, event.origin)
+          }
+        }
+        break
+
+      case 'QUENDOO_CONFIG':
+        console.log('[PostMessage] Received Quendoo configuration')
+        if (event.data.apiKey) {
+          settingsStore.setQuendooApiKey(event.data.apiKey)
+        }
+        if (event.data.hotelId) {
+          console.log('[PostMessage] Hotel ID:', event.data.hotelId)
+          // Can store hotel context if needed
+        }
+        if (event.data.userId) {
+          console.log('[PostMessage] User ID:', event.data.userId)
+          // Can store user context if needed
+        }
+
+        // Send confirmation
+        if (event.source) {
+          event.source.postMessage({
+            type: 'QUENDOO_CONFIG_RECEIVED',
+            success: true
+          }, event.origin)
+        }
+        break
+
+      default:
+        console.log('[PostMessage] Unknown message type:', event.data.type)
+    }
+  }
+}
+
+onMounted(() => {
+  console.log('[PostMessage] Listener initialized')
+  window.addEventListener('message', handlePostMessage)
+
+  // Notify parent window that chatbot is ready
+  if (window.parent !== window) {
+    console.log('[PostMessage] Notifying parent that chatbot is ready')
+    window.parent.postMessage({
+      type: 'CHATBOT_READY'
+    }, '*')
+  }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('message', handlePostMessage)
+})
 </script>
 
 <template>
