@@ -74,6 +74,20 @@ const router = createRouter({
           next('/admin/login')
         }
       }
+    },
+    {
+      path: '/admin/analytics',
+      name: 'admin-analytics',
+      component: () => import('../views/admin/AdminAnalytics.vue'),
+      beforeEnter: async (to, from, next) => {
+        const authStore = useAuthStore()
+        const isAuthenticated = await authStore.verifyAuthentication()
+        if (isAuthenticated) {
+          next()
+        } else {
+          next('/admin/login')
+        }
+      }
     }
   ]
 })

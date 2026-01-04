@@ -94,10 +94,10 @@ export const chatApi = {
 
   /**
    * Get all conversations
-   * @returns {Promise<Array>} List of conversations
+   * @returns {Promise<Object>} Response with conversations array
    */
   async getConversations() {
-    const response = await apiClient.get('/chat/conversations')
+    const response = await apiClient.get('/conversations')
     return response.data
   },
 
@@ -107,7 +107,7 @@ export const chatApi = {
    * @returns {Promise<Object>} Conversation data with messages
    */
   async getConversation(conversationId) {
-    const response = await apiClient.get(`/chat/conversation/${conversationId}`)
+    const response = await apiClient.get(`/conversations/${conversationId}`)
     return response.data
   },
 
@@ -116,7 +116,20 @@ export const chatApi = {
    * @param {string} conversationId - Conversation ID
    */
   async deleteConversation(conversationId) {
-    await apiClient.delete(`/chat/conversation/${conversationId}`)
+    await apiClient.delete(`/conversations/${conversationId}`)
+  },
+
+  /**
+   * Search conversations
+   * @param {string} query - Search term
+   * @param {number} limit - Optional result limit
+   * @returns {Promise<Object>} Search results with conversations array
+   */
+  async searchConversations(query, limit = 20) {
+    const response = await apiClient.get(`/conversations/search`, {
+      params: { q: query, limit }
+    })
+    return response.data
   }
 }
 

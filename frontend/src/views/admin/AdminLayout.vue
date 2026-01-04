@@ -42,6 +42,14 @@
           class="mb-1"
         />
         <v-list-item
+          :to="'/admin/analytics'"
+          prepend-icon="mdi-chart-line"
+          title="Analytics"
+          value="analytics"
+          rounded="lg"
+          class="mb-1"
+        />
+        <v-list-item
           :to="'/admin/settings'"
           prepend-icon="mdi-cog"
           title="Settings"

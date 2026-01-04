@@ -290,6 +290,29 @@ app.delete('/conversations/:id', async (req, res) => {
 });
 
 /**
+ * Search conversations
+ * GET /conversations/search
+ * Query params: q (search term), limit (optional)
+ */
+app.get('/conversations/search', async (req, res) => {
+  try {
+    const { q, limit } = req.query;
+
+    if (!q || !q.trim()) {
+      return res.status(400).json({ error: 'Search term required' });
+    }
+
+    const searchLimit = parseInt(limit) || 20;
+    const results = await conversationService.searchConversations('default', q.trim(), searchLimit);
+
+    res.json({ conversations: results, query: q.trim() });
+  } catch (error) {
+    console.error('[Conversations] Error searching conversations:', error);
+    res.status(500).json({ error: 'Failed to search conversations' });
+  }
+});
+
+/**
  * Get recent security events (admin only)
  * GET /admin/security/events
  * Query params: ?limit=50&type=input_blocked
@@ -310,6 +333,70 @@ app.get('/admin/security/events', requireAuth, (req, res) => {
 // Import and use admin configuration routes
 import adminRoutes from './api/adminRoutes.js';
 app.use('/admin', requireAuth, adminRoutes);
+
+/**
+ * Admin Analytics Endpoints
+ */
+
+/**
+ * Get audit statistics
+ * GET /admin/analytics/audit-stats
+ * Query params: hours (default: 24)
+ */
+app.get('/admin/analytics/audit-stats', requireAuth, async (req, res) => {
+  try {
+    const hours = parseInt(req.query.hours) || 24;
+    const { getAuditStats } = await import('./db/auditService.js');
+    const stats = await getAuditStats(hours);
+    res.json({ stats, timeframe: `${hours} hours` });
+  } catch (error) {
+    console.error('[Analytics] Error fetching audit stats:', error);
+    res.status(500).json({ error: 'Failed to fetch audit statistics' });
+  }
+});
+
+/**
+ * Get conversation statistics
+ * GET /admin/analytics/conversation-stats
+ */
+app.get('/admin/analytics/conversation-stats', requireAuth, async (req, res) => {
+  try {
+    const conversations = await conversationService.getConversations('default', 1000);
+
+    // Calculate stats
+    const stats = {
+      totalConversations: conversations.length,
+      totalMessages: conversations.reduce((sum, conv) => sum + (conv.messageCount || 0), 0),
+      averageMessagesPerConversation: conversations.length > 0
+        ? Math.round(conversations.reduce((sum, conv) => sum + (conv.messageCount || 0), 0) / conversations.length * 10) / 10
+        : 0,
+      conversationsToday: 0,
+      conversationsThisWeek: 0,
+      conversationsThisMonth: 0
+    };
+
+    // Count conversations by timeframe
+    const now = Date.now();
+    const oneDayAgo = now - 24 * 60 * 60 * 1000;
+    const oneWeekAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const oneMonthAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+    conversations.forEach(conv => {
+      const createdTime = conv.createdAt?._seconds
+        ? conv.createdAt._seconds * 1000
+        : new Date(conv.createdAt).getTime();
+
+      if (createdTime >= oneDayAgo) stats.conversationsToday++;
+      if (createdTime >= oneWeekAgo) stats.conversationsThisWeek++;
+      if (createdTime >= oneMonthAgo) stats.conversationsThisMonth++;
+    });
+
+    res.json({ stats });
+  } catch (error) {
+    console.error('[Analytics] Error fetching conversation stats:', error);
+    res.status(500).json({ error: 'Failed to fetch conversation statistics' });
+  }
+});
 
 /**
  * List all connected MCP servers
