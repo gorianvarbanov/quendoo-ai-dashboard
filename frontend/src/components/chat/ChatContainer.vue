@@ -238,12 +238,12 @@ function handleSendMessage(content) {
   chatStore.sendMessage(content)
 }
 
-function handleNewConversation() {
-  chatStore.createConversation()
+async function handleNewConversation() {
+  await chatStore.createConversation()
 }
 
-function selectConversation(id) {
-  chatStore.setCurrentConversation(id)
+async function selectConversation(id) {
+  await chatStore.setCurrentConversation(id)
 }
 
 function clearError() {

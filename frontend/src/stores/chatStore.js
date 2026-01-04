@@ -148,7 +148,7 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   // Actions
-  function createConversation(serverId = null) {
+  async function createConversation(serverId = null) {
     const id = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const conversation = {
       id,
@@ -158,9 +158,19 @@ export const useChatStore = defineStore('chat', () => {
       updatedAt: new Date().toISOString()
     }
 
+    // Add to local state immediately
     conversations.value.set(id, conversation)
     messages.value.set(id, [])
     currentConversationId.value = id
+
+    // Persist to database immediately
+    try {
+      await chatApi.createConversation(id, conversation.title)
+      console.log(`[Chat Store] Created conversation ${id} in database`)
+    } catch (err) {
+      console.error('[Chat Store] Failed to create conversation in database:', err)
+      // Continue anyway - conversation exists locally
+    }
 
     saveToStorage()
     return id
@@ -214,16 +224,31 @@ export const useChatStore = defineStore('chat', () => {
     try {
       // Create conversation if none exists
       if (!currentConversationId.value) {
-        createConversation(serverId)
+        await createConversation(serverId)
       }
 
       const conversationId = currentConversationId.value
+      const conversation = conversations.value.get(conversationId)
 
       // Add user message
       addMessage(conversationId, {
         role: 'user',
         content: content.trim()
       })
+
+      // Update conversation title from first message
+      if (conversation && conversation.title === 'New Conversation') {
+        const newTitle = content.trim().substring(0, 50) + (content.trim().length > 50 ? '...' : '')
+        conversation.title = newTitle
+
+        // Update title in database immediately
+        try {
+          await chatApi.updateConversation(conversationId, { title: newTitle })
+          console.log(`[Chat Store] Updated conversation title to: ${newTitle}`)
+        } catch (err) {
+          console.error('[Chat Store] Failed to update conversation title:', err)
+        }
+      }
 
       // Set loading state
       isLoading.value = true

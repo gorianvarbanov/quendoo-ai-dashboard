@@ -258,22 +258,28 @@ export async function searchConversations(userId, searchTerm, limit = 20) {
     const db = await getFirestore();
     const conversationsRef = db.collection(COLLECTIONS.CONVERSATIONS);
 
-    // Note: Firestore doesn't support full-text search natively
-    // This is a simple prefix search on title
+    // Firestore doesn't support full-text search natively
+    // Get all conversations and filter in memory
     // For production, consider using Algolia or Cloud Search for full-text search
 
     const snapshot = await conversationsRef
       .where('userId', '==', userId)
-      .where('title', '>=', searchTerm)
-      .where('title', '<=', searchTerm + '\uf8ff')
-      .orderBy('title')
-      .limit(limit)
       .get();
 
-    return snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // Filter conversations by title in memory (case-insensitive)
+    const searchLower = searchTerm.toLowerCase();
+    const filtered = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }))
+      .filter(conv => {
+        const title = (conv.title || '').toLowerCase();
+        return title.includes(searchLower);
+      })
+      .slice(0, limit);
+
+    return filtered;
   } catch (error) {
     console.error('[ConversationService] Error searching conversations:', error);
     throw error;

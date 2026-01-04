@@ -130,6 +130,31 @@ export const chatApi = {
       params: { q: query, limit }
     })
     return response.data
+  },
+
+  /**
+   * Create a new conversation
+   * @param {string} conversationId - Optional custom conversation ID
+   * @param {string} title - Optional conversation title
+   * @returns {Promise<Object>} Created conversation data
+   */
+  async createConversation(conversationId, title = 'New Conversation') {
+    const response = await apiClient.post('/conversations', {
+      conversationId,
+      title
+    })
+    return response.data
+  },
+
+  /**
+   * Update conversation metadata (e.g., title)
+   * @param {string} conversationId - Conversation ID
+   * @param {object} updates - Fields to update
+   * @returns {Promise<Object>} Update response
+   */
+  async updateConversation(conversationId, updates) {
+    const response = await apiClient.patch(`/conversations/${conversationId}`, updates)
+    return response.data
   }
 }
 

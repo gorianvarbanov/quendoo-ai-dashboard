@@ -233,6 +233,27 @@ app.get('/admin/security/stats', requireAuth, (req, res) => {
  */
 
 /**
+ * Create a new conversation
+ * POST /conversations
+ * Body: { conversationId (optional), title (optional) }
+ */
+app.post('/conversations', async (req, res) => {
+  try {
+    const { conversationId, title } = req.body;
+
+    const conversation = await conversationService.createConversation('default', {
+      conversationId,
+      title: title || 'New Conversation'
+    });
+
+    res.json({ conversation });
+  } catch (error) {
+    console.error('[Conversations] Error creating conversation:', error);
+    res.status(500).json({ error: 'Failed to create conversation' });
+  }
+});
+
+/**
  * Get all conversations
  * GET /conversations
  * Query params: limit (optional)
@@ -289,6 +310,24 @@ app.get('/conversations/:id', async (req, res) => {
   } catch (error) {
     console.error('[Conversations] Error fetching conversation:', error);
     res.status(500).json({ error: 'Failed to fetch conversation' });
+  }
+});
+
+/**
+ * Update conversation (e.g., change title)
+ * PATCH /conversations/:id
+ */
+app.patch('/conversations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    await conversationService.updateConversation(id, updates);
+
+    res.json({ success: true, message: 'Conversation updated' });
+  } catch (error) {
+    console.error('[Conversations] Error updating conversation:', error);
+    res.status(500).json({ error: 'Failed to update conversation' });
   }
 });
 
