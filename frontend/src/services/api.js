@@ -114,6 +114,16 @@ export const chatApi = {
   },
 
   /**
+   * Get messages for a specific conversation
+   * @param {string} conversationId - Conversation ID
+   * @returns {Promise<Object>} Messages array
+   */
+  async getConversationMessages(conversationId) {
+    const response = await apiClient.get(`/conversations/${conversationId}/messages`)
+    return response.data
+  },
+
+  /**
    * Delete a conversation
    * @param {string} conversationId - Conversation ID
    */

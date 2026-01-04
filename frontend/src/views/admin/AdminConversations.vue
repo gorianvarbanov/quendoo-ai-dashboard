@@ -438,9 +438,9 @@ const viewConversation = async (conversation) => {
   conversationMessages.value = []
 
   try {
-    const response = await chatApi.getConversationMessages(conversation.id)
-    if (response.messages && Array.isArray(response.messages)) {
-      conversationMessages.value = response.messages
+    const response = await chatApi.getConversation(conversation.id)
+    if (response.conversation && response.conversation.messages) {
+      conversationMessages.value = response.conversation.messages
     }
   } catch (error) {
     console.error('[Admin] Failed to load messages:', error)
