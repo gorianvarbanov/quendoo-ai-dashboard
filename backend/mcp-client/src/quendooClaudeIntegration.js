@@ -150,9 +150,18 @@ export class QuendooClaudeIntegration {
 
     // Send POST request
     try {
+      const headers = {
+        'Content-Type': 'application/json'
+      };
+
+      // Add Quendoo API key if provided
+      if (this.currentQuendooApiKey) {
+        headers['X-Quendoo-Api-Key'] = this.currentQuendooApiKey;
+      }
+
       const response = await fetch(this.postUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(message)
       });
 
@@ -181,7 +190,10 @@ export class QuendooClaudeIntegration {
   /**
    * Process a chat message with Claude using remote MCP server
    */
-  async processMessage(message, conversationId, model = 'claude-sonnet-4-20250514', systemPrompt = null) {
+  async processMessage(message, conversationId, model = 'claude-sonnet-4-20250514', systemPrompt = null, quendooApiKey = null) {
+    // Store the Quendoo API key for this request
+    this.currentQuendooApiKey = quendooApiKey;
+
     // Connect to MCP server if not already connected
     await this.connectToMCPServer();
 

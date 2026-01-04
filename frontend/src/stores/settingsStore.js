@@ -1,13 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-const SETTINGS_VERSION = 5 // Increment to force settings reset
+const SETTINGS_VERSION = 6 // Increment to force settings reset
 
 export const useSettingsStore = defineStore('settings', () => {
   // State
   const anthropicApiKey = ref('')
+  const quendooApiKey = ref('') // User's Quendoo API key
   const mcpClientUrl = ref('https://quendoo-backend-222402522800.us-central1.run.app')
-  const mcpServerUrl = ref('https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse')
+  const mcpServerUrl = ref('https://mcp-quendoo-chatbot-222402522800.us-central1.run.app/sse')
   const systemPrompt = ref('You are a specialized AI assistant EXCLUSIVELY for Quendoo hotel reservation system.\n\nYOU CAN ONLY HELP WITH:\n- Hotel room reservations and bookings\n- Checking room availability\n- Hotel property settings and configuration\n- Pricing and packages\n- Check-in/Check-out information\n- Guest management\n- Hotel business operations\n\nYOU MUST REFUSE to help with:\n- Medical advice or health questions (flu treatment, medications, etc.)\n- Cooking recipes or food preparation\n- General life advice\n- Technical support outside hotel systems\n- ANY topics unrelated to hotel business\n\nWhen asked about topics outside your scope, you MUST respond: "I cannot answer questions that are not connected to Quendoo functionalities."')
   const theme = ref('light')
   const autoScroll = ref(true)
@@ -31,8 +32,9 @@ export const useSettingsStore = defineStore('settings', () => {
         }
 
         anthropicApiKey.value = settings.anthropicApiKey || ''
+        quendooApiKey.value = settings.quendooApiKey || ''
         mcpClientUrl.value = settings.mcpClientUrl || 'https://quendoo-backend-222402522800.us-central1.run.app'
-        mcpServerUrl.value = settings.mcpServerUrl || 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
+        mcpServerUrl.value = settings.mcpServerUrl || 'https://mcp-quendoo-chatbot-222402522800.us-central1.run.app/sse'
         systemPrompt.value = settings.systemPrompt || 'You are a specialized AI assistant EXCLUSIVELY for Quendoo hotel reservation system.\n\nYOU CAN ONLY HELP WITH:\n- Hotel room reservations and bookings\n- Checking room availability\n- Hotel property settings and configuration\n- Pricing and packages\n- Check-in/Check-out information\n- Guest management\n- Hotel business operations\n\nYOU MUST REFUSE to help with:\n- Medical advice or health questions (flu treatment, medications, etc.)\n- Cooking recipes or food preparation\n- General life advice\n- Technical support outside hotel systems\n- ANY topics unrelated to hotel business\n\nWhen asked about topics outside your scope, you MUST respond: "I cannot answer questions that are not connected to Quendoo functionalities."'
         theme.value = settings.theme || 'light'
         autoScroll.value = settings.autoScroll !== false
@@ -50,6 +52,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const settings = {
         version: SETTINGS_VERSION,
         anthropicApiKey: anthropicApiKey.value,
+        quendooApiKey: quendooApiKey.value,
         mcpClientUrl: mcpClientUrl.value,
         mcpServerUrl: mcpServerUrl.value,
         systemPrompt: systemPrompt.value,
@@ -70,6 +73,12 @@ export const useSettingsStore = defineStore('settings', () => {
   // Update API key
   const updateApiKey = (key) => {
     anthropicApiKey.value = key
+    saveSettings()
+  }
+
+  // Update Quendoo API key
+  const updateQuendooApiKey = (key) => {
+    quendooApiKey.value = key
     saveSettings()
   }
 
@@ -100,8 +109,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // Reset to defaults
   const resetToDefaults = () => {
     anthropicApiKey.value = ''
+    quendooApiKey.value = ''
     mcpClientUrl.value = 'https://quendoo-backend-222402522800.us-central1.run.app'
-    mcpServerUrl.value = 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
+    mcpServerUrl.value = 'https://mcp-quendoo-chatbot-222402522800.us-central1.run.app/sse'
     systemPrompt.value = 'You are a specialized AI assistant EXCLUSIVELY for Quendoo hotel reservation system.\n\nYOU CAN ONLY HELP WITH:\n- Hotel room reservations and bookings\n- Checking room availability\n- Hotel property settings and configuration\n- Pricing and packages\n- Check-in/Check-out information\n- Guest management\n- Hotel business operations\n\nYOU MUST REFUSE to help with:\n- Medical advice or health questions (flu treatment, medications, etc.)\n- Cooking recipes or food preparation\n- General life advice\n- Technical support outside hotel systems\n- ANY topics unrelated to hotel business\n\nWhen asked about topics outside your scope, you MUST respond: "I cannot answer questions that are not connected to Quendoo functionalities."'
     theme.value = 'light'
     autoScroll.value = true
@@ -158,6 +168,7 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     // State
     anthropicApiKey,
+    quendooApiKey,
     mcpClientUrl,
     mcpServerUrl,
     systemPrompt,
@@ -171,6 +182,7 @@ export const useSettingsStore = defineStore('settings', () => {
     loadSettings,
     saveSettings,
     updateApiKey,
+    updateQuendooApiKey,
     updateMcpClientUrl,
     updateMcpServerUrl,
     updateSystemPrompt,

@@ -634,11 +634,19 @@ app.post('/chat', async (req, res) => {
  */
 app.post('/chat/quendoo', async (req, res) => {
   try {
-    const { message, conversationId, model } = req.body;
+    const { message, conversationId, model, quendooApiKey } = req.body;
     // NOTE: systemPrompt is NO LONGER accepted from client for security
 
     if (!message) {
       return res.status(400).json({ error: 'message required' });
+    }
+
+    // Validate Quendoo API key is provided by user
+    if (!quendooApiKey || quendooApiKey.trim() === '') {
+      return res.status(400).json({
+        error: 'Quendoo API key required',
+        details: 'Please provide your Quendoo API key in Settings to use the chatbot.'
+      });
     }
 
     const finalConversationId = conversationId || `conv_${Date.now()}`;
@@ -697,7 +705,14 @@ app.post('/chat/quendoo', async (req, res) => {
       console.log(`[Chat/Quendoo] Reusing existing MCP session for conversation: ${finalConversationId}`);
     }
 
-    const result = await quendooIntegration.processMessage(message, finalConversationId, model, finalSystemPrompt);
+    // Pass user's Quendoo API key to the integration
+    const result = await quendooIntegration.processMessage(
+      message,
+      finalConversationId,
+      model,
+      finalSystemPrompt,
+      quendooApiKey  // User-provided Quendoo API key
+    );
 
     // === SECURITY: Log successful request ===
     securityMonitor.logRequestSuccess(finalConversationId);
@@ -768,6 +783,16 @@ export { inputValidator, outputFilter, toolValidator, securityMonitor };
 
 // Initialize Firestore and start server
 async function startServer() {
+  try {
+    // Initialize admin authentication
+    console.log('[Init] Initializing admin authentication...');
+    await adminAuth.initialize();
+    console.log('[Init] Admin authentication initialized successfully');
+  } catch (error) {
+    console.error('[Init] Failed to initialize admin auth:', error.message);
+    console.warn('[Init] Admin authentication may use default credentials');
+  }
+
   try {
     // Initialize Firestore
     console.log('[Init] Initializing Firestore...');

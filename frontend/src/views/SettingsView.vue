@@ -63,6 +63,22 @@
               </template>
             </v-text-field>
 
+            <v-text-field
+              v-model="quendooApiKey"
+              label="Quendoo API Key"
+              type="password"
+              hint="Enter your Quendoo PMS API key for hotel operations"
+              persistent-hint
+              class="mb-4 api-key-field"
+              density="comfortable"
+              placeholder="Your Quendoo API key"
+              autocomplete="off"
+            >
+              <template v-slot:prepend>
+                <v-icon>mdi-hotel</v-icon>
+              </template>
+            </v-text-field>
+
             <v-alert
               v-if="apiKeyError"
               type="error"
@@ -81,7 +97,7 @@
                 :disabled="!apiKey || !isValidApiKey"
               >
                 <v-icon left>mdi-content-save</v-icon>
-                Save API Key
+                Save API Keys
               </v-btn>
 
               <v-btn
@@ -484,6 +500,7 @@ const settingsStore = useSettingsStore()
 
 // Local state
 const apiKey = ref(settingsStore.anthropicApiKey)
+const quendooApiKey = ref(settingsStore.quendooApiKey)
 const mcpClientUrl = ref(settingsStore.mcpClientUrl)
 const mcpServerUrl = ref(settingsStore.mcpServerUrl)
 const systemPromptText = ref(settingsStore.systemPrompt)
@@ -536,10 +553,11 @@ const saveApiKey = async () => {
   saving.value = true
   try {
     settingsStore.updateApiKey(apiKey.value)
-    successMessage.value = 'API key saved successfully!'
+    settingsStore.updateQuendooApiKey(quendooApiKey.value)
+    successMessage.value = 'API keys saved successfully!'
     showSuccess.value = true
   } catch (error) {
-    errorMessage.value = 'Failed to save API key: ' + error.message
+    errorMessage.value = 'Failed to save API keys: ' + error.message
     showError.value = true
   } finally {
     saving.value = false

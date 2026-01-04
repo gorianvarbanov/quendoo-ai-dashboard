@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { chatApi } from '../services/api'
 import sseClient from '../services/sseClient'
+import { useSettingsStore } from './settingsStore'
 
 const STORAGE_KEY_CONVERSATIONS = 'quendoo-conversations'
 const STORAGE_KEY_MESSAGES = 'quendoo-messages'
@@ -254,13 +255,18 @@ export const useChatStore = defineStore('chat', () => {
       isLoading.value = true
       error.value = null
 
+      // Get Quendoo API key from settings
+      const settingsStore = useSettingsStore()
+      const quendooApiKey = settingsStore.quendooApiKey
+
       // Send message to backend with conversation ID
       // Backend will maintain MCP session per conversation for context continuity
       const response = await chatApi.sendMessage(
         content.trim(),
         conversationId,  // Send conversation ID to maintain MCP session
         serverId,
-        selectedModel.value
+        selectedModel.value,
+        quendooApiKey  // User's Quendoo API key from Settings
       )
 
       // Handle response based on type

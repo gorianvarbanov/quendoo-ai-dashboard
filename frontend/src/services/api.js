@@ -71,9 +71,10 @@ export const chatApi = {
    * @param {string} conversationId - Optional conversation ID
    * @param {string} serverId - Optional server ID
    * @param {string} model - Optional Claude model to use
+   * @param {string} quendooApiKey - User's Quendoo API key
    * @returns {Promise<Object>} Response with conversation ID and AI response
    */
-  async sendMessage(content, conversationId = null, serverId = null, model = null) {
+  async sendMessage(content, conversationId = null, serverId = null, model = null, quendooApiKey = null) {
     // NOTE: System prompt is now managed server-side for security
     // Client no longer sends system prompt in request body
 
@@ -81,7 +82,8 @@ export const chatApi = {
       message: content,
       conversationId,
       serverId,
-      model
+      model,
+      quendooApiKey  // User's Quendoo API key from Settings
       // systemPrompt removed - server controls this for security
     })
 

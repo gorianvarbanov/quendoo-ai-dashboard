@@ -111,6 +111,15 @@
               icon
               variant="text"
               size="small"
+              @click="settingsDrawer = true"
+              title="Settings"
+            >
+              <v-icon size="18">mdi-cog</v-icon>
+            </v-btn>
+            <v-btn
+              icon
+              variant="text"
+              size="small"
               @click="theme.global.name.value = theme.global.name.value === 'light' ? 'dark' : 'light'"
               title="Toggle theme"
             >
@@ -173,6 +182,92 @@
         </div>
       </div>
     </div>
+
+    <!-- Settings Drawer -->
+    <v-navigation-drawer
+      v-model="settingsDrawer"
+      location="right"
+      temporary
+      width="400"
+      class="settings-drawer"
+    >
+      <div class="settings-content">
+        <div class="settings-header">
+          <h2 class="settings-title">Settings</h2>
+          <v-btn
+            icon
+            variant="text"
+            size="small"
+            @click="settingsDrawer = false"
+          >
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </div>
+
+        <v-divider class="mb-4" />
+
+        <div class="settings-body">
+          <!-- Anthropic API Key -->
+          <div class="setting-section">
+            <h3 class="setting-label">
+              <v-icon size="20" class="mr-2">mdi-key</v-icon>
+              Anthropic API Key
+            </h3>
+            <v-text-field
+              v-model="anthropicApiKey"
+              type="password"
+              variant="outlined"
+              density="comfortable"
+              placeholder="sk-ant-..."
+              hint="Your Anthropic API key for Claude"
+              persistent-hint
+              class="mb-4"
+            />
+          </div>
+
+          <!-- Quendoo API Key -->
+          <div class="setting-section">
+            <h3 class="setting-label">
+              <v-icon size="20" class="mr-2">mdi-hotel</v-icon>
+              Quendoo API Key
+            </h3>
+            <v-text-field
+              v-model="quendooApiKey"
+              type="password"
+              variant="outlined"
+              density="comfortable"
+              placeholder="Your Quendoo API key"
+              hint="Your Quendoo PMS API key for hotel operations"
+              persistent-hint
+              class="mb-4"
+            />
+          </div>
+
+          <!-- Save Button -->
+          <v-btn
+            color="primary"
+            block
+            size="large"
+            @click="saveSettings"
+            :loading="savingSettings"
+          >
+            Save Settings
+          </v-btn>
+
+          <!-- Success Message -->
+          <v-alert
+            v-if="settingsSaved"
+            type="success"
+            density="compact"
+            class="mt-4"
+            closable
+            @click:close="settingsSaved = false"
+          >
+            Settings saved successfully!
+          </v-alert>
+        </div>
+      </div>
+    </v-navigation-drawer>
   </div>
 </template>
 
@@ -181,6 +276,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useChatStore } from '@/stores/chatStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import { chatApi } from '@/services/api'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
@@ -188,6 +284,7 @@ import ChatInput from './ChatInput.vue'
 const router = useRouter()
 const theme = useTheme()
 const chatStore = useChatStore()
+const settingsStore = useSettingsStore()
 
 // Load saved conversations on mount
 onMounted(() => {
@@ -196,6 +293,30 @@ onMounted(() => {
 
 // Local state
 const sidebarOpen = ref(window.innerWidth > 1024)
+
+// Settings drawer state
+const settingsDrawer = ref(false)
+const anthropicApiKey = ref(settingsStore.anthropicApiKey)
+const quendooApiKey = ref(settingsStore.quendooApiKey)
+const savingSettings = ref(false)
+const settingsSaved = ref(false)
+
+// Save settings function
+const saveSettings = async () => {
+  savingSettings.value = true
+  try {
+    settingsStore.updateApiKey(anthropicApiKey.value)
+    settingsStore.updateQuendooApiKey(quendooApiKey.value)
+    settingsSaved.value = true
+    setTimeout(() => {
+      settingsSaved.value = false
+    }, 3000)
+  } catch (error) {
+    console.error('[Settings] Failed to save:', error)
+  } finally {
+    savingSettings.value = false
+  }
+}
 
 // Search state
 const searchQuery = ref('')
@@ -570,5 +691,48 @@ onMounted(() => {
     z-index: 100;
     height: 100%;
   }
+}
+
+/* Settings Drawer Styles */
+.settings-drawer {
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+}
+
+.settings-content {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.settings-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.setting-section {
+  margin-bottom: 24px;
+}
+
+.setting-label {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: rgb(var(--v-theme-on-surface));
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
 }
 </style>

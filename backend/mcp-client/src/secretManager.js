@@ -112,7 +112,10 @@ export async function disableSecret(secretName) {
 export async function isSecretConfigured(secretName) {
   try {
     const value = await getSecret(secretName);
-    return value && value !== 'your-api-key-here' && value.length > 20;
+    // For passwords, we just need a non-empty, non-placeholder value
+    // For API keys, they should be longer
+    const minLength = secretName.includes('password') ? 8 : 20;
+    return value && value !== 'your-api-key-here' && value.length >= minLength;
   } catch (error) {
     if (error.code === 5) { // NOT_FOUND
       return false;
