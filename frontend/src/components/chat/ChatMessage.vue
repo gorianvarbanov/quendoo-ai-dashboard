@@ -383,10 +383,11 @@ const formattedContent = computed(() => {
 .message-content {
   white-space: pre-wrap;
   word-wrap: break-word;
-  line-height: 1.7;
+  line-height: 1.6;
   color: rgb(var(--v-theme-on-surface));
-  font-size: 0.9375rem;
+  font-size: 16px;
   text-align: left;
+  letter-spacing: -0.01em;
 }
 
 /* Markdown styles */
@@ -422,13 +423,14 @@ const formattedContent = computed(() => {
 
 .message-content :deep(ul),
 .message-content :deep(ol) {
-  margin: 8px 0;
-  padding-left: 24px;
+  margin: 0;
+  padding-left: 16px;
 }
 
 .message-content :deep(li) {
-  margin: 4px 0;
-  line-height: 1.6;
+  margin: 0;
+  line-height: 1.2;
+  padding: 0;
 }
 
 .message-content :deep(p) {

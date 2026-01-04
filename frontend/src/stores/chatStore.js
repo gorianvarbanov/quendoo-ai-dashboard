@@ -20,50 +20,6 @@ export const useChatStore = defineStore('chat', () => {
   const selectedModel = ref('claude-3-5-haiku-20241022') // Default model - Haiku 3.5
 
   // Load conversations from database API
-  async function loadFromDatabase() {
-    try {
-      console.log('[Chat Store] Loading conversations from database...')
-
-      // Fetch conversations from API
-      const response = await chatApi.getConversations()
-
-      if (response.conversations && Array.isArray(response.conversations)) {
-        // Clear existing conversations
-        conversations.value.clear()
-
-        // Load conversations from API
-        response.conversations.forEach(conv => {
-          conversations.value.set(conv.id, {
-            id: conv.id,
-            title: conv.title || 'Conversation',
-            createdAt: conv.createdAt?._seconds
-              ? new Date(conv.createdAt._seconds * 1000).toISOString()
-              : conv.createdAt,
-            updatedAt: conv.updatedAt?._seconds
-              ? new Date(conv.updatedAt._seconds * 1000).toISOString()
-              : conv.updatedAt,
-            messageCount: conv.messageCount || 0
-          })
-        })
-
-        console.log(`[Chat Store] Loaded ${conversations.value.size} conversations from database`)
-      }
-
-      // Load current conversation ID from localStorage
-      const storedCurrentConv = localStorage.getItem(STORAGE_KEY_CURRENT_CONV)
-      if (storedCurrentConv && conversations.value.has(storedCurrentConv)) {
-        currentConversationId.value = storedCurrentConv
-        // Load messages for current conversation
-        await loadConversationMessages(storedCurrentConv)
-      }
-    } catch (err) {
-      console.error('[Chat Store] Failed to load from database:', err)
-      // Fallback to localStorage if database fails
-      loadFromLocalStorage()
-    }
-  }
-
-  // Fallback: Load from localStorage
   function loadFromLocalStorage() {
     try {
       // Load conversations
@@ -95,6 +51,66 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  async function loadFromDatabase() {
+    try {
+      console.log('[Chat Store] Loading conversations from database...')
+
+      // First, load from localStorage as fallback
+      loadFromLocalStorage()
+      const localCount = conversations.value.size
+      console.log(`[Chat Store] Loaded ${localCount} conversations from localStorage`)
+
+      // Then fetch from API
+      const response = await chatApi.getConversations()
+
+      if (response.conversations && Array.isArray(response.conversations)) {
+        console.log(`[Chat Store] API returned ${response.conversations.length} conversations`)
+
+        // Merge API conversations with local ones (keep newer version)
+        if (response.conversations.length > 0) {
+          // Merge conversations from API (don't clear local ones)
+          response.conversations.forEach(conv => {
+            const apiConv = {
+              id: conv.id,
+              title: conv.title || 'Conversation',
+              createdAt: conv.createdAt?._seconds
+                ? new Date(conv.createdAt._seconds * 1000).toISOString()
+                : conv.createdAt,
+              updatedAt: conv.updatedAt?._seconds
+                ? new Date(conv.updatedAt._seconds * 1000).toISOString()
+                : conv.updatedAt,
+              messageCount: conv.messageCount || 0
+            }
+            
+            // Only overwrite if API version is newer or doesn't exist locally
+            const localConv = conversations.value.get(conv.id)
+            if (!localConv || (apiConv.updatedAt && apiConv.updatedAt > localConv.updatedAt)) {
+              conversations.value.set(conv.id, apiConv)
+            }
+          })
+
+          console.log(`[Chat Store] Merged API conversations, total: ${conversations.value.size} conversations`)
+        } else {
+          console.log('[Chat Store] API returned empty list, keeping localStorage conversations')
+        }
+      }
+
+      // Load current conversation ID from localStorage
+      const storedCurrentConv = localStorage.getItem(STORAGE_KEY_CURRENT_CONV)
+      if (storedCurrentConv && conversations.value.has(storedCurrentConv)) {
+        currentConversationId.value = storedCurrentConv
+        // Load messages for current conversation
+        await loadConversationMessages(storedCurrentConv)
+      }
+    } catch (err) {
+      console.error('[Chat Store] Failed to load from database:', err)
+      // localStorage already loaded above, so we're good
+    }
+  }
+
+
+  // Fallback: Load from localStorage
+
   // Load messages for a specific conversation
   async function loadConversationMessages(conversationId) {
     try {
@@ -124,6 +140,7 @@ export const useChatStore = defineStore('chat', () => {
     try {
       // Convert Map to plain object for JSON serialization
       const conversationsObj = Object.fromEntries(conversations.value)
+      console.log(`[Chat Store] Saving ${conversations.value.size} conversations to localStorage`)
       localStorage.setItem(STORAGE_KEY_CONVERSATIONS, JSON.stringify(conversationsObj))
 
       const messagesObj = Object.fromEntries(messages.value)
@@ -132,6 +149,7 @@ export const useChatStore = defineStore('chat', () => {
       if (currentConversationId.value) {
         localStorage.setItem(STORAGE_KEY_CURRENT_CONV, currentConversationId.value)
       }
+      console.log('[Chat Store] Successfully saved to localStorage')
     } catch (err) {
       console.error('[Chat Store] Failed to save to storage:', err)
     }
@@ -190,6 +208,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function addMessage(conversationId, message) {
+    console.log('[Chat Store] addMessage called for conversation:', conversationId)
     if (!messages.value.has(conversationId)) {
       messages.value.set(conversationId, [])
     }
@@ -216,6 +235,7 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
+    console.log('[Chat Store] Calling saveToStorage from addMessage')
     saveToStorage()
   }
 
@@ -444,6 +464,7 @@ export const useChatStore = defineStore('chat', () => {
     cleanup,
     loadFromDatabase,
     loadFromLocalStorage,
+    loadFromStorage: loadFromLocalStorage, // Backwards compatibility alias
     loadConversationMessages,
     saveToStorage
   }

@@ -5,8 +5,16 @@
 
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 
-const client = new SecretManagerServiceClient();
+// Check if Secret Manager is enabled
+const isEnabled = () => process.env.USE_SECRET_MANAGER !== 'false';
+
+let client = null;
 const projectId = process.env.GOOGLE_CLOUD_PROJECT || 'quendoo-ai-dashboard';
+
+// Only initialize client if enabled
+if (isEnabled()) {
+  client = new SecretManagerServiceClient();
+}
 
 // Secret names
 export const SECRET_NAMES = {
@@ -21,6 +29,10 @@ export const SECRET_NAMES = {
  * @returns {Promise<string>} The secret value
  */
 export async function getSecret(secretName) {
+    if (!isEnabled()) {
+    throw new Error('Secret Manager is disabled in development mode');
+  }
+
   try {
     const name = `projects/${projectId}/secrets/${secretName}/versions/latest`;
     const [version] = await client.accessSecretVersion({ name });
@@ -39,6 +51,10 @@ export async function getSecret(secretName) {
  * @returns {Promise<string>} The version name
  */
 export async function createOrUpdateSecret(secretName, secretValue) {
+    if (!isEnabled()) {
+    throw new Error('Secret Manager is disabled in development mode');
+  }
+
   try {
     const parent = `projects/${projectId}`;
     const secretPath = `${parent}/secrets/${secretName}`;
@@ -90,6 +106,10 @@ export async function createOrUpdateSecret(secretName, secretValue) {
  * @param {string} secretName - Name of the secret
  */
 export async function disableSecret(secretName) {
+    if (!isEnabled()) {
+    throw new Error('Secret Manager is disabled in development mode');
+  }
+
   try {
     const name = `projects/${projectId}/secrets/${secretName}`;
 
@@ -110,6 +130,10 @@ export async function disableSecret(secretName) {
  * @returns {Promise<boolean>} True if secret exists and has valid value
  */
 export async function isSecretConfigured(secretName) {
+    if (!isEnabled()) {
+    throw new Error('Secret Manager is disabled in development mode');
+  }
+
   try {
     const value = await getSecret(secretName);
     // For passwords, we just need a non-empty, non-placeholder value
@@ -130,6 +154,10 @@ export async function isSecretConfigured(secretName) {
  * @returns {Promise<string|null>} Masked secret value or null
  */
 export async function getMaskedSecret(secretName) {
+    if (!isEnabled()) {
+    throw new Error('Secret Manager is disabled in development mode');
+  }
+
   try {
     const value = await getSecret(secretName);
     if (!value || value === 'your-api-key-here' || value.length < 20) {

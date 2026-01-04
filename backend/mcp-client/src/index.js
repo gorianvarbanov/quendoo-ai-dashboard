@@ -122,7 +122,12 @@ const quendooIntegrations = new Map(); // conversationId -> QuendooClaudeIntegra
  */
 app.get('/health', async (req, res) => {
   try {
-    const firestoreHealth = await checkFirestoreHealth();
+    const useFirestore = process.env.USE_FIRESTORE !== 'false';
+    let firestoreHealth = { healthy: false, message: 'Disabled in development' };
+    
+    if (useFirestore) {
+      firestoreHealth = await checkFirestoreHealth();
+    }
 
     res.json({
       status: 'healthy',
@@ -793,19 +798,25 @@ async function startServer() {
     console.warn('[Init] Admin authentication may use default credentials');
   }
 
-  try {
-    // Initialize Firestore
-    console.log('[Init] Initializing Firestore...');
-    await initializeFirestore();
-    const health = await checkFirestoreHealth();
-    if (health.healthy) {
-      console.log('[Init] Firestore connected successfully');
-    } else {
-      console.warn('[Init] Firestore health check failed:', health.message);
+  // Initialize Firestore only if enabled
+  const useFirestore = process.env.USE_FIRESTORE !== 'false';
+  if (useFirestore) {
+    try {
+      // Initialize Firestore
+      console.log('[Init] Initializing Firestore...');
+      await initializeFirestore();
+      const health = await checkFirestoreHealth();
+      if (health.healthy) {
+        console.log('[Init] Firestore connected successfully');
+      } else {
+        console.warn('[Init] Firestore health check failed:', health.message);
+      }
+    } catch (error) {
+      console.error('[Init] Failed to initialize Firestore:', error.message);
+      console.warn('[Init] Continuing without database - some features may be limited');
     }
-  } catch (error) {
-    console.error('[Init] Failed to initialize Firestore:', error.message);
-    console.warn('[Init] Continuing without database - some features may be limited');
+  } else {
+    console.log('[Init] Firestore disabled (USE_FIRESTORE=false) - using localStorage only');
   }
 
   // Start server

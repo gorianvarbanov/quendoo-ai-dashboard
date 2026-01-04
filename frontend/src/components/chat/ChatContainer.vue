@@ -286,10 +286,6 @@ const theme = useTheme()
 const chatStore = useChatStore()
 const settingsStore = useSettingsStore()
 
-// Load saved conversations on mount
-onMounted(() => {
-  chatStore.loadFromStorage()
-})
 
 // Local state
 const sidebarOpen = ref(window.innerWidth > 1024)
@@ -410,13 +406,6 @@ async function handleSearch(query) {
   }, 300)
 }
 
-// Initialize with a conversation if none exists (after loading from storage)
-onMounted(() => {
-  // Only create a new conversation if there are no saved conversations
-  if (chatStore.conversations.size === 0) {
-    chatStore.createConversation()
-  }
-})
 </script>
 
 <style scoped>
