@@ -18,14 +18,14 @@
           </div>
           <div class="card-content">
             <v-alert
-              v-if="!settingsStore.apiKeyConfigured"
+              v-if="!apiKeyConfigured"
               type="warning"
               variant="tonal"
               class="mb-4"
             >
-              <div class="text-subtitle-2 mb-2">API Key Required</div>
+              <div class="text-subtitle-2 mb-2">API Key Required (Server-Side)</div>
               <div class="text-body-2">
-                To enable intelligent responses and automatic tool calling, you need to configure your Anthropic API key.
+                The Anthropic API key is now managed on the backend server for security. Configure it below.
               </div>
             </v-alert>
 
@@ -35,9 +35,9 @@
               variant="tonal"
               class="mb-4"
             >
-              <div class="text-subtitle-2 mb-2">API Key Configured</div>
+              <div class="text-subtitle-2 mb-2">API Key Configured on Server</div>
               <div class="text-body-2">
-                Claude AI is enabled. Your chatbot can now use intelligent tool calling!
+                Claude AI is enabled and configured server-side. Current key: {{ maskedKey }}
               </div>
             </v-alert>
 
@@ -45,12 +45,11 @@
               v-model="apiKey"
               label="Anthropic API Key"
               type="password"
-              hint="Get your API key from https://console.anthropic.com/"
+              hint="API key is stored securely on the backend server"
               persistent-hint
               class="mb-4 api-key-field"
               density="comfortable"
-              :readonly="settingsStore.apiKeyConfigured"
-              :placeholder="settingsStore.apiKeyConfigured ? '••••••••••••••••••••••••••••••••' : 'sk-ant-api03-...'"
+              :placeholder="apiKeyConfigured ? 'Enter new key to update' : 'sk-ant-api03-...'"
               autocomplete="off"
             >
               <template v-slot:prepend>
@@ -69,24 +68,24 @@
 
             <div class="d-flex gap-2">
               <v-btn
-                v-if="!settingsStore.apiKeyConfigured"
                 color="primary"
                 @click="saveApiKey"
                 :loading="saving"
                 :disabled="!apiKey || !isValidApiKey"
               >
                 <v-icon left>mdi-content-save</v-icon>
-                Save API Key
+                {{ apiKeyConfigured ? 'Update API Key' : 'Save API Key' }}
               </v-btn>
 
               <v-btn
-                v-if="settingsStore.apiKeyConfigured"
+                v-if="apiKeyConfigured"
                 color="error"
                 variant="outlined"
                 @click="clearApiKey"
+                :loading="saving"
               >
                 <v-icon left>mdi-delete</v-icon>
-                Clear API Key
+                Remove API Key
               </v-btn>
 
               <v-btn
@@ -94,7 +93,7 @@
                 variant="outlined"
                 @click="testConnection"
                 :loading="testing"
-                :disabled="!settingsStore.apiKeyConfigured"
+                :disabled="!apiKeyConfigured"
               >
                 <v-icon left>mdi-connection</v-icon>
                 Test Connection
@@ -103,8 +102,7 @@
 
             <div class="info-text">
               <v-icon size="small" class="mr-1">mdi-information</v-icon>
-              Your API key is stored locally in your browser and never sent to our servers.
-              It's only used to communicate directly with Anthropic's API.
+              API key is stored securely on the backend server. It never reaches the browser for maximum security.
             </div>
           </div>
         </div>
@@ -246,6 +244,34 @@
           </div>
         </div>
 
+        <!-- Data Management -->
+        <div class="settings-card">
+          <div class="card-header">
+            <v-icon class="header-icon">mdi-database</v-icon>
+            <span class="header-title">Data Management</span>
+          </div>
+          <div class="card-content">
+            <p class="text-body-2 mb-4">
+              Clear conversation history and cached data. This will NOT affect your API key or settings.
+            </p>
+
+            <v-btn
+              color="warning"
+              variant="outlined"
+              @click="showClearConversationsDialog = true"
+              class="mb-3"
+            >
+              <v-icon left>mdi-message-minus</v-icon>
+              Clear All Conversations
+            </v-btn>
+
+            <div class="info-text">
+              <v-icon size="small" class="mr-1">mdi-information</v-icon>
+              This will remove all conversation history but keep your API key and settings intact.
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="settings-card danger-card">
           <div class="card-header">
@@ -303,23 +329,23 @@
           <v-list density="compact" class="sidebar-list">
             <v-list-item>
               <template v-slot:prepend>
-                <v-icon :color="settingsStore.apiKeyConfigured ? 'success' : 'grey'">
-                  mdi-{{ settingsStore.apiKeyConfigured ? 'check-circle' : 'circle-outline' }}
+                <v-icon :color="apiKeyConfigured ? 'success' : 'grey'">
+                  mdi-{{ apiKeyConfigured ? 'check-circle' : 'circle-outline' }}
                 </v-icon>
               </template>
-              <v-list-item-title>Claude API</v-list-item-title>
+              <v-list-item-title>Claude API (Server)</v-list-item-title>
               <v-list-item-subtitle>
-                {{ settingsStore.apiKeyConfigured ? 'Configured' : 'Not configured' }}
+                {{ apiKeyConfigured ? 'Configured' : 'Not configured' }}
               </v-list-item-subtitle>
             </v-list-item>
 
-            <v-list-item v-if="settingsStore.apiKeyConfigured">
+            <v-list-item v-if="apiKeyConfigured">
               <template v-slot:prepend>
                 <v-icon>mdi-key</v-icon>
               </template>
-              <v-list-item-title>API Key</v-list-item-title>
+              <v-list-item-title>API Key (Backend)</v-list-item-title>
               <v-list-item-subtitle class="font-mono">
-                {{ settingsStore.getMaskedApiKey() }}
+                {{ maskedKey }}
               </v-list-item-subtitle>
             </v-list-item>
 
@@ -387,14 +413,19 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useAuthStore } from '../../stores/authStore'
+import { adminApi } from '../../services/api'
 import AdminLayout from './AdminLayout.vue'
 
 const settingsStore = useSettingsStore()
+const authStore = useAuthStore()
 
 // Local state
-const apiKey = ref(settingsStore.anthropicApiKey)
+const apiKey = ref('')
+const apiKeyConfigured = ref(false)
+const maskedKey = ref(null)
 const mcpClientUrl = ref(settingsStore.mcpClientUrl)
 const mcpServerUrl = ref(settingsStore.mcpServerUrl)
 const systemPromptText = ref(settingsStore.systemPrompt)
@@ -405,8 +436,10 @@ const notifications = ref(settingsStore.notifications)
 const showApiKey = ref(false)
 const saving = ref(false)
 const testing = ref(false)
+const loading = ref(false)
 const apiKeyError = ref('')
 const showResetDialog = ref(false)
+const showClearConversationsDialog = ref(false)
 const showSuccess = ref(false)
 const showError = ref(false)
 const successMessage = ref('')
@@ -414,13 +447,33 @@ const errorMessage = ref('')
 
 // Computed
 const isValidApiKey = computed(() => {
-  return settingsStore.validateApiKey(apiKey.value)
+  if (!apiKey.value) return false
+  return apiKey.value.startsWith('sk-ant-') && apiKey.value.length > 20
 })
 
 // Watch for API key changes to clear error
 watch(apiKey, () => {
   apiKeyError.value = ''
 })
+
+// Load API key status on mount
+onMounted(async () => {
+  await loadApiKeyStatus()
+})
+
+// Load API key status from backend
+const loadApiKeyStatus = async () => {
+  loading.value = true
+  try {
+    const result = await adminApi.getApiKeyStatus(authStore.token)
+    apiKeyConfigured.value = result.configured
+    maskedKey.value = result.maskedKey
+  } catch (error) {
+    console.error('Failed to load API key status:', error)
+  } finally {
+    loading.value = false
+  }
+}
 
 // Methods
 const saveApiKey = async () => {
@@ -431,22 +484,35 @@ const saveApiKey = async () => {
 
   saving.value = true
   try {
-    settingsStore.updateApiKey(apiKey.value)
-    successMessage.value = 'API key saved successfully!'
+    const result = await adminApi.updateApiKey(authStore.token, apiKey.value)
+    apiKeyConfigured.value = result.configured
+    maskedKey.value = result.maskedKey
+    apiKey.value = '' // Clear input field
+    successMessage.value = 'API key saved successfully on server!'
     showSuccess.value = true
   } catch (error) {
-    errorMessage.value = 'Failed to save API key: ' + error.message
+    errorMessage.value = error.response?.data?.error || 'Failed to save API key'
     showError.value = true
   } finally {
     saving.value = false
   }
 }
 
-const clearApiKey = () => {
-  settingsStore.clearApiKey()
-  apiKey.value = ''
-  successMessage.value = 'API key cleared'
-  showSuccess.value = true
+const clearApiKey = async () => {
+  saving.value = true
+  try {
+    await adminApi.removeApiKey(authStore.token)
+    apiKeyConfigured.value = false
+    maskedKey.value = null
+    apiKey.value = ''
+    successMessage.value = 'API key removed from server'
+    showSuccess.value = true
+  } catch (error) {
+    errorMessage.value = error.response?.data?.error || 'Failed to remove API key'
+    showError.value = true
+  } finally {
+    saving.value = false
+  }
 }
 
 const saveMcpUrl = () => {

@@ -12,17 +12,15 @@ const apiClient = axios.create({
   }
 })
 
-// Request interceptor for logging/debugging and adding API key and MCP Server URL
+// Request interceptor for logging/debugging and adding MCP Server URL
+// NOTE: API key is now managed server-side for security
 apiClient.interceptors.request.use(
   (config) => {
-    // Add Anthropic API key and MCP Server URL from localStorage if available
+    // Add MCP Server URL from localStorage if available
     try {
       const settings = localStorage.getItem('quendoo-settings')
       if (settings) {
-        const { anthropicApiKey, mcpServerUrl } = JSON.parse(settings)
-        if (anthropicApiKey) {
-          config.headers['X-Anthropic-API-Key'] = anthropicApiKey
-        }
+        const { mcpServerUrl } = JSON.parse(settings)
         if (mcpServerUrl) {
           config.headers['X-MCP-Server-URL'] = mcpServerUrl
         }
@@ -177,6 +175,49 @@ export const healthApi = {
    */
   async check() {
     const response = await apiClient.get('/health')
+    return response.data
+  }
+}
+
+/**
+ * Admin API methods (requires authentication)
+ */
+export const adminApi = {
+  /**
+   * Get API key status
+   * @param {string} token - Admin JWT token
+   * @returns {Promise<Object>} API key status
+   */
+  async getApiKeyStatus(token) {
+    const response = await apiClient.get('/admin/api-key/status', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    return response.data
+  },
+
+  /**
+   * Update API key
+   * @param {string} token - Admin JWT token
+   * @param {string} apiKey - New Anthropic API key
+   * @returns {Promise<Object>} Update result
+   */
+  async updateApiKey(token, apiKey) {
+    const response = await apiClient.put('/admin/api-key/update',
+      { apiKey },
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    )
+    return response.data
+  },
+
+  /**
+   * Remove API key
+   * @param {string} token - Admin JWT token
+   * @returns {Promise<Object>} Removal result
+   */
+  async removeApiKey(token) {
+    const response = await apiClient.delete('/admin/api-key/remove', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
     return response.data
   }
 }

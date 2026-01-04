@@ -54,17 +54,31 @@ app.use(express.json());
 // Initialize MCP Client Manager
 const mcpManager = new MCPClientManager();
 
-// Initialize Claude Integration (if API key provided)
-// Note: API key can also come from request headers for user-specific keys
+// Initialize Claude Integration (using backend API key only)
+// API key is stored server-side for security
 let claudeIntegration = null;
-const envApiKey = process.env.ANTHROPIC_API_KEY;
+let currentApiKey = process.env.ANTHROPIC_API_KEY;
 
-if (envApiKey && envApiKey !== 'your-api-key-here') {
-  claudeIntegration = new ClaudeIntegration(envApiKey, mcpManager);
-  console.log('Claude API integration enabled (from .env)');
-} else {
-  console.log('Claude API will use keys from request headers');
+function initializeClaudeIntegration() {
+  if (currentApiKey && currentApiKey !== 'your-api-key-here') {
+    claudeIntegration = new ClaudeIntegration(currentApiKey, mcpManager);
+    console.log('Claude API integration enabled (backend API key)');
+    return true;
+  } else {
+    claudeIntegration = null;
+    console.log('Claude API key not configured on backend');
+    return false;
+  }
 }
+
+// Export function to reinitialize when API key changes
+export function reinitializeClaudeIntegration() {
+  currentApiKey = process.env.ANTHROPIC_API_KEY;
+  return initializeClaudeIntegration();
+}
+
+// Initialize on startup
+initializeClaudeIntegration();
 
 // Store Quendoo integration instances per conversation
 const quendooIntegrations = new Map(); // conversationId -> QuendooClaudeIntegration instance
@@ -323,21 +337,11 @@ app.post('/chat', async (req, res) => {
 
     const finalConversationId = conversationId || `conv_${Date.now()}`;
 
-    // Get API key from header (user-specific) or use default from env
-    const requestApiKey = req.headers['x-anthropic-api-key'];
-    let activeClaudeIntegration = claudeIntegration;
-
-    // If request has API key, create temporary Claude integration for this request
-    if (requestApiKey && requestApiKey !== 'your-api-key-here') {
-      console.log('[Chat] Using API key from request header');
-      activeClaudeIntegration = new ClaudeIntegration(requestApiKey, mcpManager);
-    }
-
-    // Use Claude if available
-    if (activeClaudeIntegration) {
+    // Use backend Claude integration only (no client-provided API keys)
+    if (claudeIntegration) {
       console.log(`[Chat] Processing with Claude: "${message.substring(0, 50)}..."`);
 
-      const result = await activeClaudeIntegration.processMessage(
+      const result = await claudeIntegration.processMessage(
         message,
         finalConversationId,
         serverId
@@ -412,12 +416,10 @@ app.post('/chat/quendoo', async (req, res) => {
       });
     }
 
-    // Get API key from header
-    const requestApiKey = req.headers['x-anthropic-api-key'];
-
-    if (!requestApiKey || requestApiKey === 'your-api-key-here') {
-      return res.status(400).json({
-        error: 'Anthropic API key required. Please configure your API key in Settings.'
+    // Use backend API key only (no client-provided keys)
+    if (!currentApiKey || currentApiKey === 'your-api-key-here') {
+      return res.status(503).json({
+        error: 'Anthropic API key not configured on server. Please contact administrator.'
       });
     }
 
@@ -438,7 +440,7 @@ app.post('/chat/quendoo', async (req, res) => {
 
     if (!quendooIntegration) {
       console.log(`[Chat/Quendoo] Creating new MCP session for conversation: ${finalConversationId}`);
-      quendooIntegration = new QuendooClaudeIntegration(requestApiKey, quendooUrl);
+      quendooIntegration = new QuendooClaudeIntegration(currentApiKey, quendooUrl);
       quendooIntegrations.set(finalConversationId, quendooIntegration);
     } else {
       console.log(`[Chat/Quendoo] Reusing existing MCP session for conversation: ${finalConversationId}`);

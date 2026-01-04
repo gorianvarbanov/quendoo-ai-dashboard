@@ -1,12 +1,13 @@
 /**
  * Admin API Routes
- * Endpoints for managing security rules and configuration
+ * Endpoints for managing security rules, configuration, and API keys
  */
 
 import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,9 @@ const __dirname = path.dirname(__filename);
 
 // Path to validation config file
 const VALIDATION_CONFIG_PATH = path.join(__dirname, '../security/validationConfig.js');
+
+// Path to .env file (go up to project root)
+const ENV_FILE_PATH = path.join(__dirname, '../../.env');
 
 /**
  * GET /admin/security/config
@@ -428,6 +432,139 @@ router.get('/security/events', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to get security events'
+    });
+  }
+});
+
+/**
+ * GET /admin/api-key/status
+ * Check if Anthropic API key is configured
+ */
+router.get('/api-key/status', (req, res) => {
+  try {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const isConfigured = apiKey && apiKey !== 'your-api-key-here' && apiKey.length > 20;
+
+    res.json({
+      success: true,
+      configured: isConfigured,
+      maskedKey: isConfigured ? `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 4)}` : null
+    });
+  } catch (error) {
+    console.error('Error checking API key status:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to check API key status'
+    });
+  }
+});
+
+/**
+ * PUT /admin/api-key/update
+ * Update Anthropic API key in .env file
+ * Body: { apiKey }
+ */
+router.put('/api-key/update', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+
+    if (!apiKey) {
+      return res.status(400).json({
+        success: false,
+        error: 'API key is required'
+      });
+    }
+
+    // Validate API key format
+    if (!apiKey.startsWith('sk-ant-') || apiKey.length < 20) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid Anthropic API key format. Key should start with "sk-ant-"'
+      });
+    }
+
+    // Read current .env file
+    let envContent = await fs.readFile(ENV_FILE_PATH, 'utf-8');
+
+    // Update ANTHROPIC_API_KEY line
+    if (envContent.includes('ANTHROPIC_API_KEY=')) {
+      envContent = envContent.replace(
+        /ANTHROPIC_API_KEY=.*/,
+        `ANTHROPIC_API_KEY=${apiKey}`
+      );
+    } else {
+      // Add it if it doesn't exist
+      envContent += `\nANTHROPIC_API_KEY=${apiKey}\n`;
+    }
+
+    // Write updated .env file
+    await fs.writeFile(ENV_FILE_PATH, envContent, 'utf-8');
+
+    // Update process.env
+    process.env.ANTHROPIC_API_KEY = apiKey;
+
+    // Reinitialize Claude integration in main server
+    const { reinitializeClaudeIntegration } = await import('../index.js');
+    if (reinitializeClaudeIntegration) {
+      reinitializeClaudeIntegration();
+    }
+
+    console.log('[Admin] Anthropic API key updated successfully');
+
+    res.json({
+      success: true,
+      message: 'API key updated successfully',
+      configured: true,
+      maskedKey: `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 4)}`
+    });
+  } catch (error) {
+    console.error('Error updating API key:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update API key'
+    });
+  }
+});
+
+/**
+ * DELETE /admin/api-key/remove
+ * Remove Anthropic API key
+ */
+router.delete('/api-key/remove', async (req, res) => {
+  try {
+    // Read current .env file
+    let envContent = await fs.readFile(ENV_FILE_PATH, 'utf-8');
+
+    // Update ANTHROPIC_API_KEY to placeholder
+    envContent = envContent.replace(
+      /ANTHROPIC_API_KEY=.*/,
+      'ANTHROPIC_API_KEY=your-api-key-here'
+    );
+
+    // Write updated .env file
+    await fs.writeFile(ENV_FILE_PATH, envContent, 'utf-8');
+
+    // Update process.env
+    process.env.ANTHROPIC_API_KEY = 'your-api-key-here';
+
+    // Reinitialize Claude integration
+    const { reinitializeClaudeIntegration } = await import('../index.js');
+    if (reinitializeClaudeIntegration) {
+      reinitializeClaudeIntegration();
+    }
+
+    console.log('[Admin] Anthropic API key removed');
+
+    res.json({
+      success: true,
+      message: 'API key removed successfully',
+      configured: false
+    });
+  } catch (error) {
+    console.error('Error removing API key:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to remove API key'
     });
   }
 });
