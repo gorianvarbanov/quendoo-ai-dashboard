@@ -207,24 +207,6 @@
         <v-divider class="mb-4" />
 
         <div class="settings-body">
-          <!-- Anthropic API Key -->
-          <div class="setting-section">
-            <h3 class="setting-label">
-              <v-icon size="20" class="mr-2">mdi-key</v-icon>
-              Anthropic API Key
-            </h3>
-            <v-text-field
-              v-model="anthropicApiKey"
-              type="password"
-              variant="outlined"
-              density="comfortable"
-              placeholder="sk-ant-..."
-              hint="Your Anthropic API key for Claude"
-              persistent-hint
-              class="mb-4"
-            />
-          </div>
-
           <!-- Quendoo API Key -->
           <div class="setting-section">
             <h3 class="setting-label">
@@ -292,7 +274,6 @@ const sidebarOpen = ref(window.innerWidth > 1024)
 
 // Settings drawer state
 const settingsDrawer = ref(false)
-const anthropicApiKey = ref(settingsStore.anthropicApiKey)
 const quendooApiKey = ref(settingsStore.quendooApiKey)
 const savingSettings = ref(false)
 const settingsSaved = ref(false)
@@ -301,7 +282,6 @@ const settingsSaved = ref(false)
 const saveSettings = async () => {
   savingSettings.value = true
   try {
-    settingsStore.updateApiKey(anthropicApiKey.value)
     settingsStore.updateQuendooApiKey(quendooApiKey.value)
     settingsSaved.value = true
     setTimeout(() => {
