@@ -25,6 +25,7 @@ import {
 import { initializeFirestore, checkFirestoreHealth } from './db/firestore.js';
 import * as conversationService from './db/conversationService.js';
 import { logAudit, LOG_TYPES, LOG_ACTIONS } from './db/auditService.js';
+import { createHotelId } from './utils/hashUtils.js';
 
 const app = express();
 const port = process.env.PORT || 3100;
@@ -244,9 +245,12 @@ app.get('/admin/security/stats', requireAuth, (req, res) => {
  */
 app.post('/conversations', async (req, res) => {
   try {
-    const { conversationId, title } = req.body;
+    const { conversationId, title, quendooApiKey } = req.body;
 
-    const conversation = await conversationService.createConversation('default', {
+    // Create hotel ID from Quendoo API key, fallback to 'default'
+    const hotelId = quendooApiKey ? createHotelId(quendooApiKey) : 'default';
+
+    const conversation = await conversationService.createConversation(hotelId, {
       conversationId,
       title: title || 'New Conversation'
     });
@@ -261,15 +265,41 @@ app.post('/conversations', async (req, res) => {
 /**
  * Get all conversations
  * GET /conversations
- * Query params: limit (optional)
+ * Query params: limit (optional), quendooApiKey (optional)
+ * Headers: x-quendoo-api-key (optional)
  */
 app.get('/conversations', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
-    const conversations = await conversationService.getConversations('default', limit);
+
+    // Get Quendoo API key from query param or header
+    const quendooApiKey = req.query.quendooApiKey || req.headers['x-quendoo-api-key'];
+
+    // Create hotel ID from API key, fallback to 'default' (for admin viewing all)
+    const hotelId = quendooApiKey ? createHotelId(quendooApiKey) : 'default';
+
+    const conversations = await conversationService.getConversations(hotelId, limit);
     res.json({ conversations });
   } catch (error) {
     console.error('[Conversations] Error fetching conversations:', error);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
+/**
+ * Get ALL conversations (admin only - shows all hotels)
+ * GET /conversations/all
+ * Requires authentication
+ */
+app.get('/conversations/all', requireAuth, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 100;
+
+    // Get ALL conversations across all hotels
+    const conversations = await conversationService.getAllConversations(limit);
+    res.json({ conversations });
+  } catch (error) {
+    console.error('[Conversations] Error fetching all conversations:', error);
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
@@ -724,10 +754,13 @@ app.post('/chat/quendoo', async (req, res) => {
 
     // === DATABASE: Persist messages to Firestore ===
     try {
+      // Create hotel ID from Quendoo API key
+      const hotelId = createHotelId(quendooApiKey);
+
       // Check if conversation exists, create if not
       const existingConv = await conversationService.getConversation(finalConversationId);
       if (!existingConv) {
-        await conversationService.createConversation('default', {
+        await conversationService.createConversation(hotelId, {
           title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
           conversationId: finalConversationId
         });

@@ -407,19 +407,20 @@ const paginatedConversations = computed(() => {
 
 // Methods
 const loadConversations = async () => {
-  console.log('[Admin] Starting to load conversations...')
+  console.log('[Admin] Starting to load ALL conversations...')
   loading.value = true
   try {
-    console.log('[Admin] Calling chatApi.getConversations()...')
-    const response = await chatApi.getConversations()
+    console.log('[Admin] Calling chatApi.getAllConversations()...')
+    const response = await chatApi.getAllConversations()
     console.log('[Admin] Response:', response)
     console.log('[Admin] Response type:', typeof response)
     console.log('[Admin] Has conversations property:', 'conversations' in response)
     if (response.conversations && Array.isArray(response.conversations)) {
-      console.log('[Admin] Found', response.conversations.length, 'conversations')
+      console.log('[Admin] Found', response.conversations.length, 'conversations from all hotels')
       conversations.value = response.conversations.map(conv => ({
         id: conv.id,
         title: conv.title || 'Untitled Conversation',
+        userId: conv.userId || 'unknown',  // Hotel ID
         createdAt: conv.createdAt?._seconds
           ? new Date(conv.createdAt._seconds * 1000).toISOString()
           : conv.createdAt,

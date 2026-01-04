@@ -104,6 +104,15 @@ export const chatApi = {
   },
 
   /**
+   * Get ALL conversations from all hotels (admin only)
+   * @returns {Promise<Object>} Response with conversations array
+   */
+  async getAllConversations() {
+    const response = await apiClient.get('/conversations/all')
+    return response.data
+  },
+
+  /**
    * Get specific conversation with messages
    * @param {string} conversationId - Conversation ID
    * @returns {Promise<Object>} Conversation data with messages

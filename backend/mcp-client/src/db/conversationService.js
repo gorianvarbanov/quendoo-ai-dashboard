@@ -74,7 +74,7 @@ export async function getConversation(conversationId) {
 }
 
 /**
- * Get all conversations for a user
+ * Get all conversations for a user (hotel)
  */
 export async function getConversations(userId = 'default', limit = 50) {
   try {
@@ -102,6 +102,31 @@ export async function getConversations(userId = 'default', limit = 50) {
     return conversations;
   } catch (error) {
     console.error('[ConversationService] Error getting conversations:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get ALL conversations across all users/hotels (admin only)
+ */
+export async function getAllConversations(limit = 100) {
+  try {
+    const db = await getFirestore();
+    const conversationsRef = db.collection(COLLECTIONS.CONVERSATIONS);
+
+    const snapshot = await conversationsRef
+      .orderBy('updatedAt', 'desc')
+      .limit(limit)
+      .get();
+
+    const conversations = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    return conversations;
+  } catch (error) {
+    console.error('[ConversationService] Error getting all conversations:', error);
     throw error;
   }
 }
