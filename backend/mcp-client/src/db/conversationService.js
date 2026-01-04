@@ -7,11 +7,17 @@ import { FieldValue } from 'firebase-admin/firestore';
 
 /**
  * Create a new conversation
+ * @param {string} userId - User ID
+ * @param {object} metadata - Conversation metadata (includes conversationId if provided)
  */
 export async function createConversation(userId = 'default', metadata = {}) {
   try {
     const db = await getFirestore();
     const conversationsRef = db.collection(COLLECTIONS.CONVERSATIONS);
+
+    // If conversationId is provided in metadata, use it as the document ID
+    const conversationId = metadata.conversationId || null;
+    delete metadata.conversationId; // Remove from metadata to avoid duplication
 
     const conversationData = {
       userId,
@@ -22,10 +28,18 @@ export async function createConversation(userId = 'default', metadata = {}) {
       metadata: metadata || {}
     };
 
-    const docRef = await conversationsRef.add(conversationData);
+    let docRef;
+    if (conversationId) {
+      // Use custom conversation ID
+      docRef = conversationsRef.doc(conversationId);
+      await docRef.set(conversationData);
+    } else {
+      // Generate conversation ID automatically
+      docRef = await conversationsRef.add(conversationData);
+    }
 
     return {
-      id: docRef.id,
+      id: conversationId || docRef.id,
       ...conversationData,
       createdAt: new Date(),
       updatedAt: new Date()
