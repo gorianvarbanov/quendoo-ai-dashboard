@@ -249,6 +249,30 @@ app.get('/conversations', async (req, res) => {
 });
 
 /**
+ * Search conversations
+ * GET /conversations/search
+ * Query params: q (search term), limit (optional)
+ * NOTE: Must come BEFORE /conversations/:id route
+ */
+app.get('/conversations/search', async (req, res) => {
+  try {
+    const { q, limit } = req.query;
+
+    if (!q || !q.trim()) {
+      return res.status(400).json({ error: 'Search term required' });
+    }
+
+    const searchLimit = parseInt(limit) || 20;
+    const results = await conversationService.searchConversations('default', q.trim(), searchLimit);
+
+    res.json({ conversations: results, query: q.trim() });
+  } catch (error) {
+    console.error('[Conversations] Error searching conversations:', error);
+    res.status(500).json({ error: 'Failed to search conversations' });
+  }
+});
+
+/**
  * Get specific conversation with messages
  * GET /conversations/:id
  */
@@ -286,29 +310,6 @@ app.delete('/conversations/:id', async (req, res) => {
   } catch (error) {
     console.error('[Conversations] Error deleting conversation:', error);
     res.status(500).json({ error: 'Failed to delete conversation' });
-  }
-});
-
-/**
- * Search conversations
- * GET /conversations/search
- * Query params: q (search term), limit (optional)
- */
-app.get('/conversations/search', async (req, res) => {
-  try {
-    const { q, limit } = req.query;
-
-    if (!q || !q.trim()) {
-      return res.status(400).json({ error: 'Search term required' });
-    }
-
-    const searchLimit = parseInt(limit) || 20;
-    const results = await conversationService.searchConversations('default', q.trim(), searchLimit);
-
-    res.json({ conversations: results, query: q.trim() });
-  } catch (error) {
-    console.error('[Conversations] Error searching conversations:', error);
-    res.status(500).json({ error: 'Failed to search conversations' });
   }
 });
 
