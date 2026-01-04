@@ -205,14 +205,23 @@ export async function getMessages(conversationId, limit = 100) {
 
     const snapshot = await messagesRef
       .where('conversationId', '==', conversationId)
-      .orderBy('createdAt', 'asc')
       .limit(limit)
       .get();
 
-    return snapshot.docs.map(doc => ({
+    // Sort in memory since Firestore index might not be ready
+    const messages = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
+
+    // Sort by createdAt ascending
+    messages.sort((a, b) => {
+      const aTime = a.createdAt?.toMillis?.() || 0;
+      const bTime = b.createdAt?.toMillis?.() || 0;
+      return aTime - bTime;
+    });
+
+    return messages;
   } catch (error) {
     console.error('[ConversationService] Error getting messages:', error);
     throw error;
