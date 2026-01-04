@@ -59,7 +59,7 @@
         />
         <v-list-item
           :to="'/admin/security-config'"
-          prepend-icon="mdi-shield-cog"
+          prepend-icon="mdi-shield-lock-outline"
           title="Security Config"
           value="security-config"
           rounded="lg"

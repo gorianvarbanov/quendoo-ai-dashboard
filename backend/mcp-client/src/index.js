@@ -22,6 +22,9 @@ import {
   ToolValidator,
   SecurityMonitor
 } from './security/index.js';
+import { initializeFirestore, checkFirestoreHealth } from './db/firestore.js';
+import * as conversationService from './db/conversationService.js';
+import { logAudit, LOG_TYPES, LOG_ACTIONS } from './db/auditService.js';
 
 const app = express();
 const port = process.env.PORT || 3100;
@@ -117,12 +120,30 @@ const quendooIntegrations = new Map(); // conversationId -> QuendooClaudeIntegra
 /**
  * Health check
  */
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    connectedServers: mcpManager.getConnectedServers()
-  });
+app.get('/health', async (req, res) => {
+  try {
+    const firestoreHealth = await checkFirestoreHealth();
+
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      connectedServers: mcpManager.getConnectedServers(),
+      database: {
+        connected: firestoreHealth.healthy,
+        message: firestoreHealth.message
+      }
+    });
+  } catch (error) {
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      connectedServers: mcpManager.getConnectedServers(),
+      database: {
+        connected: false,
+        message: 'Database check failed'
+      }
+    });
+  }
 });
 
 /**
@@ -134,7 +155,7 @@ app.get('/health', (req, res) => {
  * POST /admin/login
  * Body: { username, password }
  */
-app.post('/admin/login', (req, res) => {
+app.post('/admin/login', async (req, res) => {
   try {
     const { username, password } = req.body;
 
@@ -148,8 +169,21 @@ app.post('/admin/login', (req, res) => {
     const result = adminAuth.login(username, password);
 
     if (result.success) {
+      // Log successful login
+      logAudit(LOG_TYPES.AUTH, LOG_ACTIONS.LOGIN, {
+        username,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent')
+      });
       res.json(result);
     } else {
+      // Log failed login attempt
+      logAudit(LOG_TYPES.AUTH, LOG_ACTIONS.LOGIN_FAILED, {
+        username,
+        ipAddress: req.ip,
+        userAgent: req.get('user-agent'),
+        reason: result.error
+      });
       res.status(401).json(result);
     }
   } catch (error) {
@@ -480,6 +514,41 @@ app.post('/chat/quendoo', async (req, res) => {
     // === SECURITY: Log successful request ===
     securityMonitor.logRequestSuccess(finalConversationId);
 
+    // === DATABASE: Persist messages to Firestore ===
+    try {
+      // Check if conversation exists, create if not
+      const existingConv = await conversationService.getConversation(finalConversationId);
+      if (!existingConv) {
+        await conversationService.createConversation('default', {
+          title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
+          conversationId: finalConversationId
+        });
+      }
+
+      // Save user message
+      await conversationService.addMessage(finalConversationId, 'user', message, {
+        model: model || 'claude-sonnet-4-5-20250929'
+      });
+
+      // Save assistant response
+      await conversationService.addMessage(finalConversationId, 'assistant', result.content, {
+        toolsUsed: result.toolsUsed,
+        model: model || 'claude-sonnet-4-5-20250929'
+      });
+
+      console.log(`[Database] Saved messages to conversation: ${finalConversationId}`);
+    } catch (dbError) {
+      console.error('[Database] Failed to persist messages:', dbError.message);
+      // Don't fail the request if database save fails
+    }
+
+    // === AUDIT: Log message sent ===
+    logAudit(LOG_TYPES.CONVERSATION, LOG_ACTIONS.MESSAGE_SENT, {
+      conversationId: finalConversationId,
+      messageLength: message.length,
+      model: model || 'claude-sonnet-4-5-20250929'
+    });
+
     res.json({
       conversationId: finalConversationId,
       response: {
@@ -509,11 +578,32 @@ app.use((err, req, res, next) => {
 // Export security instances for admin routes
 export { inputValidator, outputFilter, toolValidator, securityMonitor };
 
-// Start server
-app.listen(port, () => {
-  console.log(`MCP Client Server listening on port ${port}`);
-  console.log(`Health check: http://localhost:${port}/health`);
-});
+// Initialize Firestore and start server
+async function startServer() {
+  try {
+    // Initialize Firestore
+    console.log('[Init] Initializing Firestore...');
+    await initializeFirestore();
+    const health = await checkFirestoreHealth();
+    if (health.healthy) {
+      console.log('[Init] Firestore connected successfully');
+    } else {
+      console.warn('[Init] Firestore health check failed:', health.message);
+    }
+  } catch (error) {
+    console.error('[Init] Failed to initialize Firestore:', error.message);
+    console.warn('[Init] Continuing without database - some features may be limited');
+  }
+
+  // Start server
+  app.listen(port, () => {
+    console.log(`MCP Client Server listening on port ${port}`);
+    console.log(`Health check: http://localhost:${port}/health`);
+  });
+}
+
+// Start the server
+startServer();
 
 // Graceful shutdown
 process.on('SIGINT', async () => {

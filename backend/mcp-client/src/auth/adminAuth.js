@@ -5,32 +5,64 @@
 
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import dotenv from 'dotenv';
+import { getSecret, createOrUpdateSecret, isSecretConfigured, SECRET_NAMES } from '../secretManager.js';
 
 // Load environment variables first
 dotenv.config();
 
 class AdminAuth {
   constructor() {
-    // Get credentials from environment variables
+    // Get credentials from environment variables (fallback)
     this.adminUsername = process.env.ADMIN_USERNAME || 'admin';
     this.adminPassword = process.env.ADMIN_PASSWORD;
     this.jwtSecret = process.env.JWT_SECRET || this.generateDefaultSecret();
     this.jwtExpiration = '24h'; // Token expires in 24 hours
+    this.initialized = false;
 
-    // Warn if using default credentials
-    if (!process.env.ADMIN_PASSWORD) {
-      console.warn('[Auth] WARNING: ADMIN_PASSWORD not set in environment variables. Using insecure default.');
-      this.adminPassword = 'change-this-password'; // Insecure default
+    // Initialize async (will load from Secret Manager)
+    this.initialize().catch(err => {
+      console.error('[Auth] Failed to initialize:', err);
+    });
+  }
+
+  /**
+   * Initialize authentication - load credentials from Secret Manager
+   */
+  async initialize() {
+    try {
+      // Try to load password from Secret Manager
+      const passwordConfigured = await isSecretConfigured(SECRET_NAMES.ADMIN_PASSWORD);
+      if (passwordConfigured) {
+        this.adminPassword = await getSecret(SECRET_NAMES.ADMIN_PASSWORD);
+        console.log('[Auth] Loaded admin password from Secret Manager');
+      } else if (!this.adminPassword) {
+        console.warn('[Auth] WARNING: No password in Secret Manager or environment. Using default.');
+        this.adminPassword = 'change-this-password';
+      }
+
+      this.initialized = true;
+      console.log('[Auth] Admin authentication initialized');
+      console.log(`[Auth] Admin username: ${this.adminUsername}`);
+      console.log(`[Auth] Admin password loaded: ***${this.adminPassword?.slice(-3)}`);
+    } catch (error) {
+      console.warn('[Auth] Could not load from Secret Manager, using environment variables:', error.message);
+      if (!this.adminPassword) {
+        console.warn('[Auth] WARNING: ADMIN_PASSWORD not set. Using insecure default.');
+        this.adminPassword = 'change-this-password';
+      }
+      this.initialized = true;
     }
+  }
 
-    if (!process.env.JWT_SECRET) {
-      console.warn('[Auth] WARNING: JWT_SECRET not set in environment variables. Generated random secret.');
+  /**
+   * Ensure authentication is initialized
+   */
+  async ensureInitialized() {
+    if (!this.initialized) {
+      await this.initialize();
     }
-
-    console.log('[Auth] Admin authentication initialized');
-    console.log(`[Auth] Admin username: ${this.adminUsername}`);
-    console.log(`[Auth] Admin password loaded: ${this.adminPassword ? '***' + this.adminPassword.slice(-4) : 'NOT SET'}`);
   }
 
   /**
@@ -153,6 +185,62 @@ class AdminAuth {
       authenticated: false,
       error: 'Invalid or expired token'
     };
+  }
+
+  /**
+   * Change admin password
+   * @param {string} currentPassword - Current password
+   * @param {string} newPassword - New password
+   * @returns {Promise<object>} Change password response
+   */
+  async changePassword(currentPassword, newPassword) {
+    await this.ensureInitialized();
+
+    console.log('[Auth] Password change attempt');
+
+    // Verify current password
+    if (currentPassword !== this.adminPassword) {
+      console.log('[Auth] Password change failed: incorrect current password');
+      return {
+        success: false,
+        error: 'Current password is incorrect'
+      };
+    }
+
+    // Validate new password
+    if (!newPassword || newPassword.length < 8) {
+      return {
+        success: false,
+        error: 'New password must be at least 8 characters long'
+      };
+    }
+
+    if (newPassword === currentPassword) {
+      return {
+        success: false,
+        error: 'New password must be different from current password'
+      };
+    }
+
+    try {
+      // Store new password in Secret Manager
+      await createOrUpdateSecret(SECRET_NAMES.ADMIN_PASSWORD, newPassword);
+
+      // Update in-memory password
+      this.adminPassword = newPassword;
+
+      console.log('[Auth] Password changed successfully');
+      return {
+        success: true,
+        message: 'Password changed successfully'
+      };
+    } catch (error) {
+      console.error('[Auth] Failed to change password:', error);
+      return {
+        success: false,
+        error: 'Failed to update password: ' + error.message
+      };
+    }
   }
 }
 

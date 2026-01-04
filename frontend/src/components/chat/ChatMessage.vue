@@ -100,7 +100,16 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { format } from 'date-fns'
+import { marked } from 'marked'
 import TableViewer from '@/components/common/TableViewer.vue'
+
+// Configure marked for better rendering
+marked.setOptions({
+  breaks: true, // Convert \n to <br>
+  gfm: true, // GitHub Flavored Markdown
+  headerIds: false,
+  mangle: false
+})
 
 const props = defineProps({
   message: {
@@ -280,68 +289,26 @@ async function copyMessage() {
   }
 }
 
-// Function to detect and linkify URLs in text
+// Format content with Markdown support
 const formattedContent = computed(() => {
   // Use displayedContent for typewriter effect
   const contentToFormat = displayedContent.value || props.message.content || ''
 
   if (!contentToFormat) return ''
 
-  // Escape HTML to prevent XSS
-  const escapeHtml = (text) => {
+  try {
+    // Parse markdown to HTML
+    const html = marked.parse(contentToFormat)
+
+    // Add target="_blank" to all links for safety
+    return html.replace(/<a /g, '<a target="_blank" rel="noopener noreferrer" ')
+  } catch (error) {
+    console.error('[ChatMessage] Markdown parsing error:', error)
+    // Fallback to escaped text with line breaks
     const div = document.createElement('div')
-    div.textContent = text
-    return div.innerHTML
+    div.textContent = contentToFormat
+    return div.innerHTML.replace(/\n/g, '<br>')
   }
-
-  // URL regex pattern that matches http(s) URLs more accurately
-  const urlPattern = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g
-
-  // Split content into parts: text and URLs
-  const parts = []
-  let lastIndex = 0
-  let match
-
-  // Find all URLs first (before escaping)
-  const urls = []
-  const urlRegex = new RegExp(urlPattern)
-  let tempContent = contentToFormat
-  while ((match = urlRegex.exec(tempContent)) !== null) {
-    urls.push({
-      url: match[0],
-      start: match.index,
-      end: match.index + match[0].length
-    })
-  }
-
-  // Build content with escaped text and properly formatted URLs
-  let content = ''
-  lastIndex = 0
-
-  for (const urlInfo of urls) {
-    // Add escaped text before URL
-    if (urlInfo.start > lastIndex) {
-      content += escapeHtml(contentToFormat.substring(lastIndex, urlInfo.start))
-    }
-    // Add clickable URL (don't escape the URL itself)
-    content += `<a href="${urlInfo.url}" target="_blank" rel="noopener noreferrer" class="message-link">${escapeHtml(urlInfo.url)}</a>`
-    lastIndex = urlInfo.end
-  }
-
-  // Add remaining text after last URL
-  if (lastIndex < contentToFormat.length) {
-    content += escapeHtml(contentToFormat.substring(lastIndex))
-  }
-
-  // If no URLs found, just escape the whole content
-  if (urls.length === 0) {
-    content = escapeHtml(contentToFormat)
-  }
-
-  // Preserve line breaks
-  content = content.replace(/\n/g, '<br>')
-
-  return content
 })
 </script>
 
@@ -422,7 +389,82 @@ const formattedContent = computed(() => {
   text-align: left;
 }
 
-.message-content :deep(.message-link) {
+/* Markdown styles */
+.message-content :deep(strong) {
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.message-content :deep(em) {
+  font-style: italic;
+}
+
+.message-content :deep(h1),
+.message-content :deep(h2),
+.message-content :deep(h3) {
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.message-content :deep(h1) {
+  font-size: 1.5rem;
+}
+
+.message-content :deep(h2) {
+  font-size: 1.25rem;
+}
+
+.message-content :deep(h3) {
+  font-size: 1.125rem;
+}
+
+.message-content :deep(ul),
+.message-content :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.message-content :deep(li) {
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+.message-content :deep(p) {
+  margin: 8px 0;
+}
+
+.message-content :deep(p:first-child) {
+  margin-top: 0;
+}
+
+.message-content :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.message-content :deep(code) {
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+}
+
+.message-content :deep(pre) {
+  background: rgba(var(--v-theme-on-surface), 0.05);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+
+.message-content :deep(pre code) {
+  background: none;
+  padding: 0;
+}
+
+.message-content :deep(a) {
   color: rgb(var(--v-theme-primary));
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -430,9 +472,16 @@ const formattedContent = computed(() => {
   font-weight: 500;
 }
 
-.message-content :deep(.message-link:hover) {
+.message-content :deep(a:hover) {
   opacity: 0.8;
   text-decoration: underline;
+}
+
+.message-content :deep(blockquote) {
+  border-left: 3px solid rgba(var(--v-theme-on-surface), 0.2);
+  padding-left: 12px;
+  margin: 12px 0;
+  color: rgba(var(--v-theme-on-surface), 0.7);
 }
 
 .typing-cursor {

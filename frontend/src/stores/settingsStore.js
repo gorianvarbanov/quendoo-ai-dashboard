@@ -13,6 +13,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const autoScroll = ref(true)
   const notifications = ref(true)
   const apiKeyConfigured = ref(false)
+  const authToken = ref('')
 
   // Load settings from localStorage on init
   const loadSettings = () => {
@@ -131,8 +132,28 @@ export const useSettingsStore = defineStore('settings', () => {
     return key.substring(0, 12) + '...' + key.substring(key.length - 4)
   }
 
+  // Set auth token (for admin authentication)
+  const setAuthToken = (token) => {
+    authToken.value = token
+    // Store in sessionStorage (not localStorage for security)
+    if (token) {
+      sessionStorage.setItem('quendoo-auth-token', token)
+    } else {
+      sessionStorage.removeItem('quendoo-auth-token')
+    }
+  }
+
+  // Load auth token from sessionStorage
+  const loadAuthToken = () => {
+    const token = sessionStorage.getItem('quendoo-auth-token')
+    if (token) {
+      authToken.value = token
+    }
+  }
+
   // Initialize on creation
   loadSettings()
+  loadAuthToken()
 
   return {
     // State
@@ -144,6 +165,7 @@ export const useSettingsStore = defineStore('settings', () => {
     autoScroll,
     notifications,
     apiKeyConfigured,
+    authToken,
 
     // Actions
     loadSettings,
@@ -156,6 +178,8 @@ export const useSettingsStore = defineStore('settings', () => {
     resetToDefaults,
     clearApiKey,
     validateApiKey,
-    getMaskedApiKey
+    getMaskedApiKey,
+    setAuthToken,
+    loadAuthToken
   }
 })

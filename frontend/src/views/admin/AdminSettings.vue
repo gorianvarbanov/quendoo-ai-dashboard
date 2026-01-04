@@ -272,6 +272,89 @@
           </div>
         </div>
 
+        <!-- Password Management -->
+        <div class="settings-card">
+          <div class="card-header">
+            <v-icon class="header-icon">mdi-lock</v-icon>
+            <span class="header-title">Password Management</span>
+          </div>
+          <div class="card-content">
+            <v-alert
+              v-if="passwordChangeSuccess"
+              type="success"
+              variant="tonal"
+              class="mb-4"
+            >
+              Password changed successfully!
+            </v-alert>
+
+            <v-alert
+              v-if="passwordChangeError"
+              type="error"
+              variant="tonal"
+              class="mb-4"
+            >
+              {{ passwordChangeError }}
+            </v-alert>
+
+            <v-text-field
+              v-model="currentPassword"
+              label="Current Password"
+              type="password"
+              density="comfortable"
+              class="mb-3"
+              autocomplete="current-password"
+            >
+              <template v-slot:prepend>
+                <v-icon>mdi-lock-outline</v-icon>
+              </template>
+            </v-text-field>
+
+            <v-text-field
+              v-model="newPassword"
+              label="New Password"
+              type="password"
+              density="comfortable"
+              class="mb-3"
+              hint="Minimum 8 characters"
+              persistent-hint
+              autocomplete="new-password"
+            >
+              <template v-slot:prepend>
+                <v-icon>mdi-lock</v-icon>
+              </template>
+            </v-text-field>
+
+            <v-text-field
+              v-model="confirmPassword"
+              label="Confirm New Password"
+              type="password"
+              density="comfortable"
+              class="mb-4"
+              autocomplete="new-password"
+            >
+              <template v-slot:prepend>
+                <v-icon>mdi-lock-check</v-icon>
+              </template>
+            </v-text-field>
+
+            <v-btn
+              color="primary"
+              @click="changePassword"
+              :loading="changingPassword"
+              :disabled="!isPasswordFormValid"
+            >
+              <v-icon left>mdi-key-change</v-icon>
+              Change Password
+            </v-btn>
+
+            <div class="info-text">
+              <v-icon size="small" class="mr-1">mdi-information</v-icon>
+              Your password is securely stored in Google Cloud Secret Manager.
+            </div>
+          </div>
+        </div>
+
         <!-- Danger Zone -->
         <div class="settings-card danger-card">
           <div class="card-header">
@@ -445,10 +528,25 @@ const showError = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
 
+// Password change state
+const currentPassword = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const changingPassword = ref(false)
+const passwordChangeSuccess = ref(false)
+const passwordChangeError = ref('')
+
 // Computed
 const isValidApiKey = computed(() => {
   if (!apiKey.value) return false
   return apiKey.value.startsWith('sk-ant-') && apiKey.value.length > 20
+})
+
+const isPasswordFormValid = computed(() => {
+  return currentPassword.value.length > 0 &&
+         newPassword.value.length >= 8 &&
+         confirmPassword.value.length >= 8 &&
+         newPassword.value === confirmPassword.value
 })
 
 // Watch for API key changes to clear error
@@ -600,6 +698,51 @@ const resetAllSettings = () => {
   showResetDialog.value = false
   successMessage.value = 'All settings have been reset'
   showSuccess.value = true
+}
+
+const changePassword = async () => {
+  // Clear previous messages
+  passwordChangeSuccess.value = false
+  passwordChangeError.value = ''
+
+  // Validate passwords match
+  if (newPassword.value !== confirmPassword.value) {
+    passwordChangeError.value = 'New passwords do not match'
+    return
+  }
+
+  // Validate password length
+  if (newPassword.value.length < 8) {
+    passwordChangeError.value = 'New password must be at least 8 characters long'
+    return
+  }
+
+  changingPassword.value = true
+
+  try {
+    // Call the API
+    const result = await adminApi.changePassword(authStore.token, currentPassword.value, newPassword.value)
+
+    if (result.success) {
+      passwordChangeSuccess.value = true
+      // Clear form
+      currentPassword.value = ''
+      newPassword.value = ''
+      confirmPassword.value = ''
+
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => {
+        passwordChangeSuccess.value = false
+      }, 5000)
+    } else {
+      passwordChangeError.value = result.error || 'Failed to change password'
+    }
+  } catch (error) {
+    console.error('Password change error:', error)
+    passwordChangeError.value = error.response?.data?.error || 'Failed to change password. Please try again.'
+  } finally {
+    changingPassword.value = false
+  }
 }
 </script>
 

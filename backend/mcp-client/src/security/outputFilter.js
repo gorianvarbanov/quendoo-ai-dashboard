@@ -30,17 +30,14 @@ export class OutputFilter {
     };
 
     // Sensitive data patterns (for redaction)
+    // NOTE: Email and phone redaction REMOVED - they are essential for hotel operations
+    // (guest communication, reservations, make_call tool, etc.)
     this.sensitivePatterns = [
       // API keys
       { pattern: /sk-[a-zA-Z0-9-_]{20,}/g, replacement: '[REDACTED_API_KEY]' },
       { pattern: /api[_-]?key[:\s=]+[a-zA-Z0-9-_]{20,}/gi, replacement: '[REDACTED_API_KEY]' },
 
-      // Emails (commented out - may be needed for guest communication)
-      // { pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, replacement: '[REDACTED_EMAIL]' },
-
-      // Phone numbers - REMOVED - needed for make_call tool and hotel operations
-
-      // Credit card numbers (basic pattern)
+      // Credit card numbers (still important to protect)
       { pattern: /\b\d{4}[\s\-]?\d{4}[\s\-]?\d{4}[\s\-]?\d{4}\b/g, replacement: '[REDACTED_CARD]' },
 
       // Passwords in text

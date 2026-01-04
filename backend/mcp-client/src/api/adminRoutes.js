@@ -14,6 +14,7 @@ import {
   isSecretConfigured,
   getMaskedSecret
 } from '../secretManager.js';
+import adminAuth from '../auth/adminAuth.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -550,6 +551,38 @@ router.delete('/api-key/remove', async (req, res) => {
     res.status(500).json({
       success: false,
       error: 'Failed to remove API key: ' + error.message
+    });
+  }
+});
+
+/**
+ * PUT /admin/password/change
+ * Change admin password
+ * Body: { currentPassword, newPassword }
+ */
+router.put('/password/change', async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        error: 'Current password and new password are required'
+      });
+    }
+
+    const result = await adminAuth.changePassword(currentPassword, newPassword);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(400).json(result);
+    }
+  } catch (error) {
+    console.error('[Admin] Error changing password:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to change password: ' + error.message
     });
   }
 });

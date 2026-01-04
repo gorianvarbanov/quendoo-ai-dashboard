@@ -219,6 +219,21 @@ export const adminApi = {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     return response.data
+  },
+
+  /**
+   * Change admin password
+   * @param {string} token - Admin JWT token
+   * @param {string} currentPassword - Current password
+   * @param {string} newPassword - New password
+   * @returns {Promise<Object>} Change password result
+   */
+  async changePassword(token, currentPassword, newPassword) {
+    const response = await apiClient.put('/admin/password/change',
+      { currentPassword, newPassword },
+      { headers: { 'Authorization': `Bearer ${token}` } }
+    )
+    return response.data
   }
 }
 

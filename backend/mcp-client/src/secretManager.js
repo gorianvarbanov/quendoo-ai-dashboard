@@ -8,6 +8,13 @@ import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 const client = new SecretManagerServiceClient();
 const projectId = process.env.GOOGLE_CLOUD_PROJECT || 'quendoo-ai-dashboard';
 
+// Secret names
+export const SECRET_NAMES = {
+  ANTHROPIC_API_KEY: 'anthropic-api-key',
+  ADMIN_PASSWORD: 'admin-password',
+  JWT_SECRET: 'jwt-secret'
+};
+
 /**
  * Get the latest version of a secret
  * @param {string} secretName - Name of the secret
