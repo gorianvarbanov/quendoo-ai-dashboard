@@ -1,19 +1,14 @@
 <template>
-  <div>
-    <div class="settings-layout">
-      <div class="settings-container">
-        <div class="settings-header">
-          <h1 class="settings-title">Settings</h1>
-          <v-btn
-            variant="outlined"
-            prepend-icon="mdi-arrow-left"
-            @click="goBackToChat"
-            class="back-button"
-          >
-            Back to Chat
-          </v-btn>
-        </div>
+  <admin-layout>
+    <div class="admin-content">
+      <div class="page-header">
+        <h1 class="page-title">
+          <v-icon size="large" class="mr-2">mdi-cog</v-icon>
+          Admin Settings
+        </h1>
+      </div>
 
+      <div class="settings-container">
         <div class="settings-content">
         <!-- Claude API Configuration -->
         <div class="settings-card">
@@ -350,8 +345,9 @@
           </v-list>
         </div>
       </div>
+      </div>
     </div>
-    </div>
+    </admin-layout>
 
     <!-- Reset Confirmation Dialog -->
     <v-dialog v-model="showResetDialog" max-width="500">
@@ -388,15 +384,13 @@
     <v-snackbar v-model="showError" color="error" :timeout="5000">
       {{ errorMessage }}
     </v-snackbar>
-  </div>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { useSettingsStore } from '../stores/settingsStore'
+import { useSettingsStore } from '../../stores/settingsStore'
+import AdminLayout from './AdminLayout.vue'
 
-const router = useRouter()
 const settingsStore = useSettingsStore()
 
 // Local state
@@ -541,80 +535,74 @@ const resetAllSettings = () => {
   successMessage.value = 'All settings have been reset'
   showSuccess.value = true
 }
-
-const goBackToChat = () => {
-  router.push('/')
-}
 </script>
 
 <style scoped>
-.settings-layout {
-  min-height: 100vh;
-  background: rgb(var(--v-theme-surface));
-  padding: 32px 24px;
+.admin-content {
+  padding: 24px;
+  padding-left: 24px;
+  padding-right: 24px;
+  width: 100%;
+  max-width: none;
+  flex: 1;
 }
 
-.settings-container {
-  max-width: 1400px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr 350px;
-  gap: 32px;
+/* Page Header */
+.page-header {
+  padding: 0 0 24px 0;
+  margin-bottom: 0;
 }
 
-.settings-header {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.settings-title {
-  font-size: 2rem;
+.page-title {
+  font-size: 1.5rem;
   font-weight: 600;
   color: rgb(var(--v-theme-on-surface));
+  display: flex;
+  align-items: center;
+}
+
+/* Main content grid */
+.settings-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  padding: 0;
   margin: 0;
 }
 
-.back-button {
-  text-transform: none;
-  font-weight: 500;
-}
-
 .settings-content {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  display: contents;
 }
 
 .settings-card {
   background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .card-header {
-  padding: 20px 24px;
+  padding: 40px 48px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 20px;
 }
 
 .header-icon {
   opacity: 0.7;
+  font-size: 32px;
 }
 
 .header-title {
-  font-size: 1.125rem;
+  font-size: 1.5rem;
   font-weight: 600;
   color: rgb(var(--v-theme-on-surface));
 }
 
 .card-content {
-  padding: 24px;
+  padding: 48px;
 }
 
 .info-text {
@@ -645,15 +633,16 @@ const goBackToChat = () => {
 
 .sidebar-card {
   background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 12px;
   overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
 
 .sidebar-title {
-  padding: 20px 24px;
+  padding: 40px 48px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  font-size: 1rem;
+  font-size: 1.375rem;
   font-weight: 600;
   color: rgb(var(--v-theme-on-surface));
   margin: 0;
@@ -661,7 +650,7 @@ const goBackToChat = () => {
 
 .sidebar-list {
   background: transparent;
-  padding: 8px;
+  padding: 24px;
 }
 
 .font-mono {
@@ -672,10 +661,6 @@ const goBackToChat = () => {
 @media (max-width: 1024px) {
   .settings-container {
     grid-template-columns: 1fr;
-  }
-
-  .settings-sidebar {
-    order: -1;
   }
 }
 

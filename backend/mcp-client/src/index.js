@@ -3,17 +3,38 @@
  * Provides HTTP API for PHP backend to interact with MCP servers
  */
 
+import dotenv from 'dotenv';
+// Load environment variables FIRST before any other imports
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import { MCPClientManager } from './mcpClientManager.js';
 import { ClaudeIntegration } from './claudeIntegration.js';
 import { QuendooClaudeIntegration } from './quendooClaudeIntegration.js';
-
-dotenv.config();
+import adminAuth from './auth/adminAuth.js';
+import { requireAuth } from './auth/authMiddleware.js';
+import { getSystemPrompt } from './systemPrompts.js';
+import {
+  InputValidator,
+  OutputFilter,
+  ToolValidator,
+  SecurityMonitor
+} from './security/index.js';
 
 const app = express();
 const port = process.env.PORT || 3100;
+
+// Initialize security components
+const inputValidator = new InputValidator();
+const outputFilter = new OutputFilter();
+const toolValidator = new ToolValidator();
+const securityMonitor = new SecurityMonitor();
+console.log('[Security] All security modules initialized');
+console.log('[Security] - Input Validator: Active');
+console.log('[Security] - Output Filter: Active');
+console.log('[Security] - Tool Validator: Active');
+console.log('[Security] - Security Monitor: Active');
 
 // Configure CORS
 const corsOptions = {
@@ -45,6 +66,9 @@ if (envApiKey && envApiKey !== 'your-api-key-here') {
   console.log('Claude API will use keys from request headers');
 }
 
+// Store Quendoo integration instances per conversation
+const quendooIntegrations = new Map(); // conversationId -> QuendooClaudeIntegration instance
+
 // Routes
 
 /**
@@ -57,6 +81,97 @@ app.get('/health', (req, res) => {
     connectedServers: mcpManager.getConnectedServers()
   });
 });
+
+/**
+ * Admin Authentication Routes
+ */
+
+/**
+ * Admin login
+ * POST /admin/login
+ * Body: { username, password }
+ */
+app.post('/admin/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({
+        success: false,
+        error: 'Username and password are required'
+      });
+    }
+
+    const result = adminAuth.login(username, password);
+
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(401).json(result);
+    }
+  } catch (error) {
+    console.error('[Admin Login] Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Internal server error'
+    });
+  }
+});
+
+/**
+ * Verify admin authentication status
+ * GET /admin/verify
+ * Headers: Authorization: Bearer <token>
+ */
+app.get('/admin/verify', requireAuth, (req, res) => {
+  // If middleware passes, user is authenticated
+  res.json({
+    authenticated: true,
+    user: req.user
+  });
+});
+
+/**
+ * Get security statistics (admin only)
+ * GET /admin/security/stats
+ * Headers: Authorization: Bearer <token>
+ */
+app.get('/admin/security/stats', requireAuth, (req, res) => {
+  try {
+    const stats = {
+      monitor: securityMonitor.getStats(),
+      inputValidator: inputValidator.getStats(),
+      outputFilter: outputFilter.getStats(),
+      toolValidator: toolValidator.getStats()
+    };
+    res.json(stats);
+  } catch (error) {
+    console.error('[Admin Security] Error fetching stats:', error);
+    res.status(500).json({ error: 'Failed to fetch security statistics' });
+  }
+});
+
+/**
+ * Get recent security events (admin only)
+ * GET /admin/security/events
+ * Query params: ?limit=50&type=input_blocked
+ * Headers: Authorization: Bearer <token>
+ */
+app.get('/admin/security/events', requireAuth, (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const type = req.query.type || null;
+    const events = securityMonitor.getRecentEvents(limit, type);
+    res.json({ events });
+  } catch (error) {
+    console.error('[Admin Security] Error fetching events:', error);
+    res.status(500).json({ error: 'Failed to fetch security events' });
+  }
+});
+
+// Import and use admin configuration routes
+import adminRoutes from './api/adminRoutes.js';
+app.use('/admin', requireAuth, adminRoutes);
 
 /**
  * List all connected MCP servers
@@ -265,12 +380,37 @@ app.post('/chat', async (req, res) => {
 app.post('/chat/quendoo', async (req, res) => {
   try {
     const { message, conversationId, model } = req.body;
+    // NOTE: systemPrompt is NO LONGER accepted from client for security
 
     if (!message) {
       return res.status(400).json({ error: 'message required' });
     }
 
     const finalConversationId = conversationId || `conv_${Date.now()}`;
+
+    // === SECURITY: Rate Limiting ===
+    if (!securityMonitor.checkConversationRateLimit(finalConversationId, 20)) {
+      return res.status(429).json({
+        error: 'Too many requests',
+        details: 'Please wait a moment before sending another message.'
+      });
+    }
+
+    // === SECURITY: Input Validation ===
+    const validationResult = inputValidator.validate(message);
+    if (validationResult.blocked) {
+      securityMonitor.logInputBlocked(
+        finalConversationId,
+        message,
+        validationResult.reason,
+        validationResult.pattern
+      );
+      // Return generic error (don't reveal security details to potential attackers)
+      return res.status(400).json({
+        error: 'Cannot process request',
+        details: 'Your message could not be processed. Please ensure your question is related to hotel operations.'
+      });
+    }
 
     // Get API key from header
     const requestApiKey = req.headers['x-anthropic-api-key'];
@@ -286,13 +426,28 @@ app.post('/chat/quendoo', async (req, res) => {
       || process.env.QUENDOO_MCP_URL
       || 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse';
 
-    console.log(`[Chat/Quendoo] Processing with remote MCP server: ${quendooUrl}`);
+    // === SECURITY: Use Immutable Server-Side System Prompt ===
+    const finalSystemPrompt = getSystemPrompt();
+
+    console.log(`[Chat/Quendoo] Processing conversation: ${finalConversationId}`);
     console.log(`[Chat/Quendoo] Using model: ${model || 'default'}`);
+    console.log(`[Chat/Quendoo] System prompt: SERVER-CONTROLLED (v1.0)`);
 
-    // Create Quendoo integration with user's API key
-    const quendooIntegration = new QuendooClaudeIntegration(requestApiKey, quendooUrl);
+    // Get or create Quendoo integration for this conversation
+    let quendooIntegration = quendooIntegrations.get(finalConversationId);
 
-    const result = await quendooIntegration.processMessage(message, finalConversationId, model);
+    if (!quendooIntegration) {
+      console.log(`[Chat/Quendoo] Creating new MCP session for conversation: ${finalConversationId}`);
+      quendooIntegration = new QuendooClaudeIntegration(requestApiKey, quendooUrl);
+      quendooIntegrations.set(finalConversationId, quendooIntegration);
+    } else {
+      console.log(`[Chat/Quendoo] Reusing existing MCP session for conversation: ${finalConversationId}`);
+    }
+
+    const result = await quendooIntegration.processMessage(message, finalConversationId, model, finalSystemPrompt);
+
+    // === SECURITY: Log successful request ===
+    securityMonitor.logRequestSuccess(finalConversationId);
 
     res.json({
       conversationId: finalConversationId,
@@ -306,7 +461,11 @@ app.post('/chat/quendoo', async (req, res) => {
 
   } catch (error) {
     console.error('Quendoo chat processing failed:', error);
-    res.status(500).json({ error: error.message });
+    // If there's an error, remove the integration so next attempt creates fresh one
+    const { conversationId } = req.body;
+    const convId = conversationId || `conv_${Date.now()}`;
+    quendooIntegrations.delete(convId);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -315,6 +474,9 @@ app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({ error: 'Internal server error' });
 });
+
+// Export security instances for admin routes
+export { inputValidator, outputFilter, toolValidator, securityMonitor };
 
 // Start server
 app.listen(port, () => {

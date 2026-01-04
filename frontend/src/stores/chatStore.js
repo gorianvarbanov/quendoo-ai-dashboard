@@ -16,10 +16,15 @@ export const useChatStore = defineStore('chat', () => {
   const streamingMessage = ref('')
   const isStreaming = ref(false)
   const error = ref(null)
-  const selectedModel = ref('claude-3-5-sonnet-20240620') // Default model
+  const selectedModel = ref('claude-3-5-haiku-20241022') // Default model - Haiku 3.5
 
   // Load from localStorage on init
   function loadFromStorage() {
+    // Clear old model from localStorage if it exists
+    const oldModel = 'claude-3-5-sonnet-20241022'
+    if (selectedModel.value === oldModel) {
+      selectedModel.value = 'claude-3-5-sonnet-20240620'
+    }
     try {
       // Load conversations
       const storedConversations = localStorage.getItem(STORAGE_KEY_CONVERSATIONS)
@@ -156,10 +161,11 @@ export const useChatStore = defineStore('chat', () => {
       isLoading.value = true
       error.value = null
 
-      // Send message to backend
+      // Send message to backend with conversation ID
+      // Backend will maintain MCP session per conversation for context continuity
       const response = await chatApi.sendMessage(
         content.trim(),
-        conversationId,
+        conversationId,  // Send conversation ID to maintain MCP session
         serverId,
         selectedModel.value
       )
@@ -170,7 +176,8 @@ export const useChatStore = defineStore('chat', () => {
         addMessage(conversationId, {
           role: 'assistant',
           content: response.response.content,
-          timestamp: response.response.timestamp
+          timestamp: response.response.timestamp,
+          toolsUsed: response.response.toolsUsed || []
         })
         isLoading.value = false
       } else if (response.status === 'streaming') {

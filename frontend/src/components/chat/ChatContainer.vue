@@ -67,15 +67,6 @@
             >
               <v-icon size="18">{{ theme.global.name.value === 'light' ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
             </v-btn>
-            <v-btn
-              variant="text"
-              prepend-icon="mdi-cog"
-              @click="goToSettings"
-              block
-              size="small"
-            >
-              Settings
-            </v-btn>
           </div>
         </div>
       </div>
@@ -104,9 +95,11 @@
       <v-alert
         v-if="error"
         type="error"
-        dismissible
+        closable
         @click:close="clearError"
         class="error-alert"
+        density="compact"
+        variant="tonal"
       >
         {{ error }}
       </v-alert>
@@ -156,13 +149,13 @@ const sidebarOpen = ref(window.innerWidth > 1024)
 
 // Model mapping - display names to API model IDs
 const modelMap = {
-  'Claude Sonnet 3.5': 'claude-3-5-sonnet-20240620',
+  'Claude Sonnet 3.5': 'claude-3-5-sonnet-20241022',
   'Claude Opus 3': 'claude-3-opus-20240229',
   'Claude Haiku 3.5': 'claude-3-5-haiku-20241022'
 }
 
 const models = ref(Object.keys(modelMap))
-const selectedModel = ref('Claude Sonnet 3.5')
+const selectedModel = ref('Claude Haiku 3.5')
 
 // Watch for model changes and update store
 watch(selectedModel, (newDisplayName) => {
@@ -195,10 +188,6 @@ function handleNewConversation() {
 
 function selectConversation(id) {
   chatStore.setCurrentConversation(id)
-}
-
-function goToSettings() {
-  router.push('/settings')
 }
 
 function clearError() {
@@ -406,7 +395,9 @@ onMounted(() => {
 }
 
 .error-alert {
-  margin: 16px 24px;
+  margin: 12px auto;
+  max-width: 800px;
+  width: calc(100% - 48px);
 }
 
 .message-list-area {

@@ -27,6 +27,35 @@
         <span v-if="isTyping" class="typing-cursor">|</span>
       </div>
 
+      <!-- Tools Used Panel (shown for AI messages that used tools) -->
+      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming" class="tools-panel">
+        <div class="tools-list">
+          <v-chip
+            v-for="(tool, index) in toolsUsed"
+            :key="index"
+            size="small"
+            variant="tonal"
+            color="primary"
+            class="tool-chip"
+          >
+            <v-icon start size="14">mdi-{{ getToolIcon(tool.name) }}</v-icon>
+            {{ tool.name }}
+            <v-tooltip activator="parent" location="top">
+              <div class="tool-tooltip">
+                <div class="tool-tooltip-name">{{ tool.name }}</div>
+                <div v-if="tool.duration" class="tool-tooltip-duration">
+                  Duration: {{ tool.duration }}ms
+                </div>
+                <div v-if="tool.params" class="tool-tooltip-params">
+                  <strong>Parameters:</strong>
+                  <pre>{{ JSON.stringify(tool.params, null, 2) }}</pre>
+                </div>
+              </div>
+            </v-tooltip>
+          </v-chip>
+        </div>
+      </div>
+
       <!-- Table Viewer Button (shown when tables detected and typing is complete) -->
       <div v-if="hasTable && !isUser && !isStreaming && !isTyping" class="table-viewer-button">
         <v-btn
@@ -41,7 +70,7 @@
       </div>
 
       <div v-if="!isUser && !isStreaming && !isTyping" class="message-actions">
-        <v-btn icon variant="text" size="x-small" title="Copy">
+        <v-btn icon variant="text" size="x-small" title="Copy message" @click="copyMessage">
           <v-icon size="14">mdi-content-copy</v-icon>
         </v-btn>
         <v-btn icon variant="text" size="x-small" title="Good response">
@@ -88,6 +117,36 @@ const emit = defineEmits(['typing'])
 
 const isUser = computed(() => props.message.role === 'user')
 
+// Extract tools used from message metadata
+const toolsUsed = computed(() => {
+  if (!props.message.toolsUsed) return []
+
+  // If toolsUsed is already an array of tool objects
+  if (Array.isArray(props.message.toolsUsed)) {
+    return props.message.toolsUsed
+  }
+
+  // If toolsUsed is true/false, try to extract from content or other metadata
+  return []
+})
+
+// Get appropriate icon for each tool
+function getToolIcon(toolName) {
+  const iconMap = {
+    'get_availability': 'calendar-check',
+    'update_availability': 'calendar-edit',
+    'get_property_settings': 'cog',
+    'get_rooms_details': 'bed',
+    'get_bookings': 'book-open-variant',
+    'get_booking_offers': 'tag-multiple',
+    'make_call': 'phone',
+    'send_quendoo_email': 'email',
+    'default': 'wrench'
+  }
+
+  return iconMap[toolName] || iconMap.default
+}
+
 // Typewriter effect for AI messages
 const displayedContent = ref('')
 const isTyping = ref(false)
@@ -124,7 +183,7 @@ function startTypewriterEffect() {
   const fullContent = props.message.content
   let currentIndex = 0
 
-  const typeSpeed = 20 // milliseconds per character
+  const typeSpeed = 8 // milliseconds per character - faster typing
 
   const typeInterval = setInterval(() => {
     if (currentIndex < fullContent.length) {
@@ -196,6 +255,31 @@ function openTableViewer() {
   console.log('[ChatMessage] Opening table viewer with data:', parsedTableData.value)
 }
 
+// Copy message content to clipboard
+async function copyMessage() {
+  try {
+    await navigator.clipboard.writeText(props.message.content)
+    console.log('[ChatMessage] Message copied to clipboard')
+    // Could add a toast notification here
+  } catch (error) {
+    console.error('[ChatMessage] Failed to copy message:', error)
+    // Fallback: try using older method
+    try {
+      const textarea = document.createElement('textarea')
+      textarea.value = props.message.content
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+      console.log('[ChatMessage] Message copied using fallback method')
+    } catch (fallbackError) {
+      console.error('[ChatMessage] Fallback copy also failed:', fallbackError)
+    }
+  }
+}
+
 // Function to detect and linkify URLs in text
 const formattedContent = computed(() => {
   // Use displayedContent for typewriter effect
@@ -210,16 +294,49 @@ const formattedContent = computed(() => {
     return div.innerHTML
   }
 
-  // URL regex pattern that matches http(s), ftp URLs
-  const urlPattern = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g
+  // URL regex pattern that matches http(s) URLs more accurately
+  const urlPattern = /(https?:\/\/[^\s<>"{}|\\^`\[\]]+)/g
 
-  // Escape HTML first
-  let content = escapeHtml(contentToFormat)
+  // Split content into parts: text and URLs
+  const parts = []
+  let lastIndex = 0
+  let match
 
-  // Replace URLs with clickable links
-  content = content.replace(urlPattern, (url) => {
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer" class="message-link">${url}</a>`
-  })
+  // Find all URLs first (before escaping)
+  const urls = []
+  const urlRegex = new RegExp(urlPattern)
+  let tempContent = contentToFormat
+  while ((match = urlRegex.exec(tempContent)) !== null) {
+    urls.push({
+      url: match[0],
+      start: match.index,
+      end: match.index + match[0].length
+    })
+  }
+
+  // Build content with escaped text and properly formatted URLs
+  let content = ''
+  lastIndex = 0
+
+  for (const urlInfo of urls) {
+    // Add escaped text before URL
+    if (urlInfo.start > lastIndex) {
+      content += escapeHtml(contentToFormat.substring(lastIndex, urlInfo.start))
+    }
+    // Add clickable URL (don't escape the URL itself)
+    content += `<a href="${urlInfo.url}" target="_blank" rel="noopener noreferrer" class="message-link">${escapeHtml(urlInfo.url)}</a>`
+    lastIndex = urlInfo.end
+  }
+
+  // Add remaining text after last URL
+  if (lastIndex < contentToFormat.length) {
+    content += escapeHtml(contentToFormat.substring(lastIndex))
+  }
+
+  // If no URLs found, just escape the whole content
+  if (urls.length === 0) {
+    content = escapeHtml(contentToFormat)
+  }
 
   // Preserve line breaks
   content = content.replace(/\n/g, '<br>')
@@ -236,12 +353,33 @@ const formattedContent = computed(() => {
   padding: 8px 0;
 }
 
+/* User messages - right aligned with background */
+.message-user {
+  justify-content: flex-end;
+}
+
+.message-user .message-bubble {
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-radius: 16px;
+  padding: 12px 16px;
+  max-width: 80%;
+}
+
+/* AI messages - left aligned, no background */
+.message-assistant {
+  justify-content: flex-start;
+}
+
 .message-container:hover .message-actions {
   opacity: 1;
 }
 
 .message-avatar {
   flex-shrink: 0;
+}
+
+.message-user .message-avatar {
+  order: 2;
 }
 
 .ai-avatar {
@@ -312,6 +450,75 @@ const formattedContent = computed(() => {
   51%, 100% {
     opacity: 0;
   }
+}
+
+/* Tools Panel */
+.tools-panel {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: rgba(var(--v-theme-primary), 0.04);
+  border-left: 3px solid rgb(var(--v-theme-primary));
+  border-radius: 6px;
+}
+
+.tools-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.tools-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tools-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-chip {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Tool Tooltip */
+.tool-tooltip {
+  padding: 8px;
+  max-width: 300px;
+}
+
+.tool-tooltip-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: rgb(var(--v-theme-primary));
+}
+
+.tool-tooltip-duration {
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.tool-tooltip-params {
+  font-size: 0.7rem;
+  margin-top: 6px;
+}
+
+.tool-tooltip-params pre {
+  background: rgba(var(--v-theme-on-surface), 0.05);
+  padding: 6px;
+  border-radius: 4px;
+  margin-top: 4px;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.65rem;
+  max-height: 200px;
 }
 
 .table-viewer-button {

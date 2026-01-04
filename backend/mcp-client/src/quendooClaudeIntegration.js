@@ -8,6 +8,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { EventSource } from 'eventsource';
 import fetch from 'node-fetch';
+import { OutputFilter } from './security/outputFilter.js';
 
 export class QuendooClaudeIntegration {
   constructor(apiKey, quendooServerUrl) {
@@ -20,6 +21,7 @@ export class QuendooClaudeIntegration {
     this.eventSource = null;
     this.requestId = 0;
     this.pendingRequests = new Map(); // requestId -> { resolve, reject }
+    this.outputFilter = new OutputFilter(); // Security: filter responses
   }
 
   /**
@@ -27,7 +29,8 @@ export class QuendooClaudeIntegration {
    */
   async connectToMCPServer() {
     if (this.sessionId) {
-      return; // Already connected
+      console.log('[Quendoo] Already connected with session:', this.sessionId);
+      return; // Already connected, reuse session
     }
 
     console.log(`[Quendoo] Connecting to MCP server at ${this.quendooServerUrl}`);
@@ -116,6 +119,14 @@ export class QuendooClaudeIntegration {
    * Returns response via SSE stream (async processing)
    */
   async sendRequest(request) {
+    // Check if EventSource is still connected, reconnect if not
+    if (!this.eventSource || this.eventSource.readyState !== 1) {
+      console.log('[Quendoo] EventSource disconnected, reconnecting...');
+      this.sessionId = null;
+      this.postUrl = null;
+      await this.connectToMCPServer();
+    }
+
     const message = {
       jsonrpc: '2.0',
       id: this.requestId++,
@@ -170,7 +181,7 @@ export class QuendooClaudeIntegration {
   /**
    * Process a chat message with Claude using remote MCP server
    */
-  async processMessage(message, conversationId, model = 'claude-3-5-sonnet-20241022') {
+  async processMessage(message, conversationId, model = 'claude-sonnet-4-20250514', systemPrompt = null) {
     // Connect to MCP server if not already connected
     await this.connectToMCPServer();
 
@@ -200,7 +211,7 @@ export class QuendooClaudeIntegration {
       const response = await this.anthropic.messages.create({
         model: model,
         max_tokens: 4096,
-        system: 'You are a helpful AI assistant for Quendoo business operations. You have access to tools for checking availability, managing bookings, and other business operations. Use these tools when users ask about scheduling, appointments, or business data.',
+        system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations. You have access to tools for checking availability, managing bookings, and other business operations. Use these tools when users ask about scheduling, appointments, or business data.',
         messages: history,
         tools: claudeTools
       });
@@ -209,11 +220,22 @@ export class QuendooClaudeIntegration {
 
       // Handle tool use
       if (response.stop_reason === 'tool_use') {
-        return await this.handleToolUse(response, conversationId);
+        return await this.handleToolUse(response, conversationId, systemPrompt);
       }
 
       // Extract content from response
-      const content = this.extractContent(response);
+      const rawContent = this.extractContent(response);
+
+      // === SECURITY: Output Filtering ===
+      const filterResult = this.outputFilter.filter(rawContent, message);
+      const content = filterResult.content;
+
+      if (filterResult.filtered) {
+        console.log(`[Security] Response replaced: ${filterResult.reason}`);
+      }
+      if (filterResult.wasRedacted) {
+        console.log('[Security] Sensitive data redacted from response');
+      }
 
       // Add assistant's response to history
       history.push({
@@ -240,7 +262,7 @@ export class QuendooClaudeIntegration {
   /**
    * Handle tool use from Claude
    */
-  async handleToolUse(response, conversationId) {
+  async handleToolUse(response, conversationId, systemPrompt = null) {
     const history = this.conversationHistories.get(conversationId);
 
     // Add Claude's tool use to history
@@ -249,11 +271,16 @@ export class QuendooClaudeIntegration {
       content: response.content
     });
 
+    // Track tools used for frontend display
+    const toolsUsedInfo = [];
+
     // Execute all tool calls via Quendoo server
     const toolResults = [];
     for (const block of response.content) {
       if (block.type === 'tool_use') {
         console.log(`[Quendoo] Executing tool: ${block.name} with args:`, block.input);
+
+        const startTime = Date.now();
 
         try {
           const result = await this.sendRequest({
@@ -264,9 +291,19 @@ export class QuendooClaudeIntegration {
             }
           });
 
+          const duration = Date.now() - startTime;
+
           if (result.error) {
             throw new Error(result.error.message);
           }
+
+          // Track tool usage
+          toolsUsedInfo.push({
+            name: block.name,
+            params: block.input,
+            duration: duration,
+            success: true
+          });
 
           toolResults.push({
             type: 'tool_result',
@@ -275,6 +312,18 @@ export class QuendooClaudeIntegration {
           });
         } catch (error) {
           console.error(`[Quendoo] Tool execution failed:`, error);
+
+          const duration = Date.now() - startTime;
+
+          // Track failed tool usage
+          toolsUsedInfo.push({
+            name: block.name,
+            params: block.input,
+            duration: duration,
+            success: false,
+            error: error.message
+          });
+
           toolResults.push({
             type: 'tool_result',
             tool_use_id: block.id,
@@ -295,7 +344,7 @@ export class QuendooClaudeIntegration {
     const finalResponse = await this.anthropic.messages.create({
       model: 'claude-3-5-haiku-20241022',
       max_tokens: 4096,
-      system: 'You are a helpful AI assistant for Quendoo business operations.',
+      system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
       messages: history
     });
 
@@ -310,9 +359,23 @@ export class QuendooClaudeIntegration {
       history.splice(0, history.length - 20);
     }
 
+    // Extract and filter the final response
+    const rawContent = this.extractContent(finalResponse);
+
+    // === SECURITY: Output Filtering (for tool use responses too) ===
+    const filterResult = this.outputFilter.filter(rawContent, '');
+    const content = filterResult.content;
+
+    if (filterResult.filtered) {
+      console.log(`[Security] Tool response replaced: ${filterResult.reason}`);
+    }
+    if (filterResult.wasRedacted) {
+      console.log('[Security] Sensitive data redacted from tool response');
+    }
+
     return {
-      content: this.extractContent(finalResponse),
-      toolsUsed: true
+      content,
+      toolsUsed: toolsUsedInfo
     };
   }
 

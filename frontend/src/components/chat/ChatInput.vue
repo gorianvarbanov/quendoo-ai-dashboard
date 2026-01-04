@@ -5,7 +5,7 @@
         v-model="inputMessage"
         :placeholder="placeholder"
         :disabled="disabled"
-        rows="1"
+        rows="2"
         auto-grow
         max-rows="10"
         variant="outlined"
@@ -29,10 +29,6 @@
           </v-btn>
         </template>
       </v-textarea>
-    </div>
-
-    <div class="input-footer">
-      <span class="input-hint">Claude can make mistakes. Please double-check responses.</span>
     </div>
   </div>
 </template>
@@ -116,7 +112,7 @@ function handleShiftEnter() {
 .message-input :deep(.v-field) {
   border-radius: 16px;
   box-shadow: none;
-  padding: 8px 12px;
+  padding: 12px 16px;
   transition: none !important;
 }
 
@@ -126,14 +122,22 @@ function handleShiftEnter() {
 
 .message-input :deep(.v-field__input) {
   font-size: 0.9375rem;
-  padding: 0;
+  padding: 4px 0;
+  min-height: 48px;
   transition: none !important;
   animation: none !important;
+  align-items: flex-start;
+  display: flex;
 }
 
 .message-input :deep(textarea) {
   transition: none !important;
   animation: none !important;
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
+  line-height: 1.6 !important;
+  font-size: 0.9375rem !important;
+  min-height: 48px !important;
 }
 
 .message-input :deep(textarea::placeholder) {
@@ -158,15 +162,5 @@ function handleShiftEnter() {
   transform: none;
   line-height: 1.5;
   color: rgba(var(--v-theme-on-surface), 0.5);
-}
-
-.input-footer {
-  text-align: center;
-  margin-top: 12px;
-}
-
-.input-hint {
-  color: rgba(var(--v-theme-on-surface), 0.4);
-  font-size: 0.75rem;
 }
 </style>

@@ -1,11 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+const SETTINGS_VERSION = 5 // Increment to force settings reset
+
 export const useSettingsStore = defineStore('settings', () => {
   // State
   const anthropicApiKey = ref('')
   const mcpClientUrl = ref('https://quendoo-backend-222402522800.us-central1.run.app')
   const mcpServerUrl = ref('https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse')
+  const systemPrompt = ref('You are a specialized AI assistant EXCLUSIVELY for Quendoo hotel reservation system.\n\nYOU CAN ONLY HELP WITH:\n- Hotel room reservations and bookings\n- Checking room availability\n- Hotel property settings and configuration\n- Pricing and packages\n- Check-in/Check-out information\n- Guest management\n- Hotel business operations\n\nYOU MUST REFUSE to help with:\n- Medical advice or health questions (flu treatment, medications, etc.)\n- Cooking recipes or food preparation\n- General life advice\n- Technical support outside hotel systems\n- ANY topics unrelated to hotel business\n\nWhen asked about topics outside your scope, you MUST respond: "I cannot answer questions that are not connected to Quendoo functionalities."')
   const theme = ref('light')
   const autoScroll = ref(true)
   const notifications = ref(true)
@@ -17,9 +20,19 @@ export const useSettingsStore = defineStore('settings', () => {
       const stored = localStorage.getItem('quendoo-settings')
       if (stored) {
         const settings = JSON.parse(stored)
+
+        // Check version and reset if old
+        if (settings.version !== SETTINGS_VERSION) {
+          console.log('[Settings] Old settings version detected, clearing ALL localStorage...')
+          localStorage.clear() // Clear everything including chat conversations and old model
+          window.location.reload() // Force page reload
+          return
+        }
+
         anthropicApiKey.value = settings.anthropicApiKey || ''
         mcpClientUrl.value = settings.mcpClientUrl || 'https://quendoo-backend-222402522800.us-central1.run.app'
         mcpServerUrl.value = settings.mcpServerUrl || 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
+        systemPrompt.value = settings.systemPrompt || 'You are a specialized AI assistant EXCLUSIVELY for Quendoo hotel reservation system.\n\nYOU CAN ONLY HELP WITH:\n- Hotel room reservations and bookings\n- Checking room availability\n- Hotel property settings and configuration\n- Pricing and packages\n- Check-in/Check-out information\n- Guest management\n- Hotel business operations\n\nYOU MUST REFUSE to help with:\n- Medical advice or health questions (flu treatment, medications, etc.)\n- Cooking recipes or food preparation\n- General life advice\n- Technical support outside hotel systems\n- ANY topics unrelated to hotel business\n\nWhen asked about topics outside your scope, you MUST respond: "I cannot answer questions that are not connected to Quendoo functionalities."'
         theme.value = settings.theme || 'light'
         autoScroll.value = settings.autoScroll !== false
         notifications.value = settings.notifications !== false
@@ -34,9 +47,11 @@ export const useSettingsStore = defineStore('settings', () => {
   const saveSettings = () => {
     try {
       const settings = {
+        version: SETTINGS_VERSION,
         anthropicApiKey: anthropicApiKey.value,
         mcpClientUrl: mcpClientUrl.value,
         mcpServerUrl: mcpServerUrl.value,
+        systemPrompt: systemPrompt.value,
         theme: theme.value,
         autoScroll: autoScroll.value,
         notifications: notifications.value
@@ -69,6 +84,12 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings()
   }
 
+  // Update system prompt
+  const updateSystemPrompt = (prompt) => {
+    systemPrompt.value = prompt
+    saveSettings()
+  }
+
   // Update theme
   const updateTheme = (newTheme) => {
     theme.value = newTheme
@@ -80,6 +101,7 @@ export const useSettingsStore = defineStore('settings', () => {
     anthropicApiKey.value = ''
     mcpClientUrl.value = 'https://quendoo-backend-222402522800.us-central1.run.app'
     mcpServerUrl.value = 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse'
+    systemPrompt.value = 'You are a specialized AI assistant EXCLUSIVELY for Quendoo hotel reservation system.\n\nYOU CAN ONLY HELP WITH:\n- Hotel room reservations and bookings\n- Checking room availability\n- Hotel property settings and configuration\n- Pricing and packages\n- Check-in/Check-out information\n- Guest management\n- Hotel business operations\n\nYOU MUST REFUSE to help with:\n- Medical advice or health questions (flu treatment, medications, etc.)\n- Cooking recipes or food preparation\n- General life advice\n- Technical support outside hotel systems\n- ANY topics unrelated to hotel business\n\nWhen asked about topics outside your scope, you MUST respond: "I cannot answer questions that are not connected to Quendoo functionalities."'
     theme.value = 'light'
     autoScroll.value = true
     notifications.value = true
@@ -117,6 +139,7 @@ export const useSettingsStore = defineStore('settings', () => {
     anthropicApiKey,
     mcpClientUrl,
     mcpServerUrl,
+    systemPrompt,
     theme,
     autoScroll,
     notifications,
@@ -128,6 +151,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateApiKey,
     updateMcpClientUrl,
     updateMcpServerUrl,
+    updateSystemPrompt,
     updateTheme,
     resetToDefaults,
     clearApiKey,

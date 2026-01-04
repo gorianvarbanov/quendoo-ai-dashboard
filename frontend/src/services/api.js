@@ -76,11 +76,15 @@ export const chatApi = {
    * @returns {Promise<Object>} Response with conversation ID and AI response
    */
   async sendMessage(content, conversationId = null, serverId = null, model = null) {
+    // NOTE: System prompt is now managed server-side for security
+    // Client no longer sends system prompt in request body
+
     const response = await apiClient.post('/chat/quendoo', {
       message: content,
       conversationId,
       serverId,
       model
+      // systemPrompt removed - server controls this for security
     })
 
     // Transform response to match expected format
