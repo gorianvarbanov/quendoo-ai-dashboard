@@ -30,9 +30,58 @@
         </v-btn>
       </div>
 
+      <!-- Search Bar -->
+      <div class="sidebar-search">
+        <v-text-field
+          v-model="searchQuery"
+          placeholder="Search conversations..."
+          variant="outlined"
+          density="compact"
+          hide-details
+          clearable
+          prepend-inner-icon="mdi-magnify"
+          @update:model-value="handleSearch"
+          class="search-input"
+        >
+          <template v-slot:append-inner>
+            <v-progress-circular
+              v-if="searching"
+              indeterminate
+              size="20"
+              width="2"
+            />
+          </template>
+        </v-text-field>
+      </div>
+
       <div class="sidebar-content">
         <div class="conversations-list">
-          <div class="conversations-section">
+          <!-- Search Results -->
+          <div v-if="searchQuery && searchResults.length > 0" class="conversations-section">
+            <div class="section-header">
+              <v-icon size="16" class="mr-1">mdi-magnify</v-icon>
+              Search Results ({{ searchResults.length }})
+            </div>
+            <div
+              v-for="conv in searchResults"
+              :key="conv.id"
+              class="conversation-item"
+              :class="{ active: conv.id === currentConversation?.id }"
+              @click="selectConversation(conv.id)"
+            >
+              <span class="conv-title">{{ conv.title }}</span>
+            </div>
+          </div>
+
+          <!-- No Results -->
+          <div v-else-if="searchQuery && searchResults.length === 0 && !searching" class="no-results">
+            <v-icon size="48" color="grey-lighten-1">mdi-magnify</v-icon>
+            <p>No conversations found</p>
+            <p class="text-caption">Try a different search term</p>
+          </div>
+
+          <!-- Recent Conversations (shown when not searching) -->
+          <div v-else-if="!searchQuery" class="conversations-section">
             <div
               v-for="conv in recentConversations"
               :key="conv.id"
@@ -132,6 +181,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useChatStore } from '@/stores/chatStore'
+import { chatApi } from '@/services/api'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 
@@ -146,6 +196,12 @@ onMounted(() => {
 
 // Local state
 const sidebarOpen = ref(window.innerWidth > 1024)
+
+// Search state
+const searchQuery = ref('')
+const searchResults = ref([])
+const searching = ref(false)
+let searchTimeout = null
 
 // Model mapping - display names to API model IDs
 const modelMap = {
@@ -192,6 +248,45 @@ function selectConversation(id) {
 
 function clearError() {
   chatStore.clearError()
+}
+
+// Search handler with debouncing
+async function handleSearch(query) {
+  // Clear previous timeout
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+  }
+
+  // If query is empty, clear results
+  if (!query || query.trim() === '') {
+    searchResults.value = []
+    searching.value = false
+    return
+  }
+
+  // Debounce search by 300ms
+  searchTimeout = setTimeout(async () => {
+    searching.value = true
+    try {
+      const response = await chatApi.searchConversations(query.trim(), 20)
+      searchResults.value = response.conversations.map(conv => ({
+        id: conv.id,
+        title: conv.title || 'Conversation',
+        createdAt: conv.createdAt?._seconds
+          ? new Date(conv.createdAt._seconds * 1000).toISOString()
+          : conv.createdAt,
+        updatedAt: conv.updatedAt?._seconds
+          ? new Date(conv.updatedAt._seconds * 1000).toISOString()
+          : conv.updatedAt,
+        messageCount: conv.messageCount || 0
+      }))
+    } catch (error) {
+      console.error('[Search] Error searching conversations:', error)
+      searchResults.value = []
+    } finally {
+      searching.value = false
+    }
+  }, 300)
 }
 
 // Initialize with a conversation if none exists (after loading from storage)
@@ -268,6 +363,40 @@ onMounted(() => {
 .new-chat-btn {
   text-transform: none;
   font-weight: 500;
+}
+
+.sidebar-search {
+  padding: 0 16px 12px 16px;
+}
+
+.search-input {
+  font-size: 14px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  margin-bottom: 4px;
+}
+
+.no-results {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+.no-results p {
+  margin: 8px 0 0 0;
 }
 
 .sidebar-content {
