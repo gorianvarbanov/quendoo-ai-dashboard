@@ -83,14 +83,23 @@ export async function getConversations(userId = 'default', limit = 50) {
 
     const snapshot = await conversationsRef
       .where('userId', '==', userId)
-      .orderBy('updatedAt', 'desc')
       .limit(limit)
       .get();
 
-    return snapshot.docs.map(doc => ({
+    // Sort in memory since Firestore index might not be ready
+    const conversations = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }));
+
+    // Sort by updatedAt descending
+    conversations.sort((a, b) => {
+      const aTime = a.updatedAt?.toMillis?.() || 0;
+      const bTime = b.updatedAt?.toMillis?.() || 0;
+      return bTime - aTime;
+    });
+
+    return conversations;
   } catch (error) {
     console.error('[ConversationService] Error getting conversations:', error);
     throw error;
