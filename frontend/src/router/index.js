@@ -102,6 +102,20 @@ const router = createRouter({
           next('/admin/login')
         }
       }
+    },
+    {
+      path: '/admin/conversations',
+      name: 'admin-conversations',
+      component: () => import('../views/admin/AdminConversations.vue'),
+      beforeEnter: async (to, from, next) => {
+        const authStore = useAuthStore()
+        const isAuthenticated = await authStore.verifyAuthentication()
+        if (isAuthenticated) {
+          next()
+        } else {
+          next('/admin/login')
+        }
+      }
     }
   ]
 })

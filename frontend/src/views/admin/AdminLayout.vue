@@ -42,6 +42,14 @@
           class="mb-1"
         />
         <v-list-item
+          :to="'/admin/conversations'"
+          prepend-icon="mdi-message-text-outline"
+          title="Conversations"
+          value="conversations"
+          rounded="lg"
+          class="mb-1"
+        />
+        <v-list-item
           :to="'/admin/analytics'"
           prepend-icon="mdi-chart-line"
           title="Analytics"
