@@ -19,6 +19,7 @@
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
+    "@google-cloud/secret-manager": "^6.1.1",
     "@modelcontextprotocol/sdk": "^1.25.1",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",

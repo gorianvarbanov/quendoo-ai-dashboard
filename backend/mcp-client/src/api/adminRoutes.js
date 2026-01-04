@@ -7,7 +7,13 @@ import express from 'express';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
+import {
+  getSecret,
+  createOrUpdateSecret,
+  disableSecret,
+  isSecretConfigured,
+  getMaskedSecret
+} from '../secretManager.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -16,8 +22,8 @@ const __dirname = path.dirname(__filename);
 // Path to validation config file
 const VALIDATION_CONFIG_PATH = path.join(__dirname, '../security/validationConfig.js');
 
-// Path to .env file (go up to project root)
-const ENV_FILE_PATH = path.join(__dirname, '../../.env');
+// Secret names
+const ANTHROPIC_API_KEY_SECRET = 'anthropic-api-key';
 
 /**
  * GET /admin/security/config
@@ -438,20 +444,20 @@ router.get('/security/events', async (req, res) => {
 
 /**
  * GET /admin/api-key/status
- * Check if Anthropic API key is configured
+ * Check if Anthropic API key is configured in Secret Manager
  */
-router.get('/api-key/status', (req, res) => {
+router.get('/api-key/status', async (req, res) => {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const isConfigured = apiKey && apiKey !== 'your-api-key-here' && apiKey.length > 20;
+    const configured = await isSecretConfigured(ANTHROPIC_API_KEY_SECRET);
+    const maskedKey = configured ? await getMaskedSecret(ANTHROPIC_API_KEY_SECRET) : null;
 
     res.json({
       success: true,
-      configured: isConfigured,
-      maskedKey: isConfigured ? `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 4)}` : null
+      configured,
+      maskedKey
     });
   } catch (error) {
-    console.error('Error checking API key status:', error);
+    console.error('[Admin] Error checking API key status:', error);
     res.status(500).json({
       success: false,
       error: 'Failed to check API key status'
@@ -461,7 +467,7 @@ router.get('/api-key/status', (req, res) => {
 
 /**
  * PUT /admin/api-key/update
- * Update Anthropic API key in .env file
+ * Update Anthropic API key in Secret Manager
  * Body: { apiKey }
  */
 router.put('/api-key/update', async (req, res) => {
@@ -483,24 +489,10 @@ router.put('/api-key/update', async (req, res) => {
       });
     }
 
-    // Read current .env file
-    let envContent = await fs.readFile(ENV_FILE_PATH, 'utf-8');
+    // Store API key in Secret Manager
+    await createOrUpdateSecret(ANTHROPIC_API_KEY_SECRET, apiKey);
 
-    // Update ANTHROPIC_API_KEY line
-    if (envContent.includes('ANTHROPIC_API_KEY=')) {
-      envContent = envContent.replace(
-        /ANTHROPIC_API_KEY=.*/,
-        `ANTHROPIC_API_KEY=${apiKey}`
-      );
-    } else {
-      // Add it if it doesn't exist
-      envContent += `\nANTHROPIC_API_KEY=${apiKey}\n`;
-    }
-
-    // Write updated .env file
-    await fs.writeFile(ENV_FILE_PATH, envContent, 'utf-8');
-
-    // Update process.env
+    // Update process.env for current instance
     process.env.ANTHROPIC_API_KEY = apiKey;
 
     // Reinitialize Claude integration in main server
@@ -509,40 +501,33 @@ router.put('/api-key/update', async (req, res) => {
       reinitializeClaudeIntegration();
     }
 
-    console.log('[Admin] Anthropic API key updated successfully');
+    console.log('[Admin] Anthropic API key updated successfully in Secret Manager');
+
+    const maskedKey = `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 4)}`;
 
     res.json({
       success: true,
-      message: 'API key updated successfully',
+      message: 'API key updated successfully and stored securely in Secret Manager',
       configured: true,
-      maskedKey: `${apiKey.substring(0, 12)}...${apiKey.substring(apiKey.length - 4)}`
+      maskedKey
     });
   } catch (error) {
-    console.error('Error updating API key:', error);
+    console.error('[Admin] Error updating API key:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to update API key'
+      error: 'Failed to update API key: ' + error.message
     });
   }
 });
 
 /**
  * DELETE /admin/api-key/remove
- * Remove Anthropic API key
+ * Remove Anthropic API key from Secret Manager
  */
 router.delete('/api-key/remove', async (req, res) => {
   try {
-    // Read current .env file
-    let envContent = await fs.readFile(ENV_FILE_PATH, 'utf-8');
-
-    // Update ANTHROPIC_API_KEY to placeholder
-    envContent = envContent.replace(
-      /ANTHROPIC_API_KEY=.*/,
-      'ANTHROPIC_API_KEY=your-api-key-here'
-    );
-
-    // Write updated .env file
-    await fs.writeFile(ENV_FILE_PATH, envContent, 'utf-8');
+    // Disable the secret by setting it to placeholder
+    await disableSecret(ANTHROPIC_API_KEY_SECRET);
 
     // Update process.env
     process.env.ANTHROPIC_API_KEY = 'your-api-key-here';
@@ -553,18 +538,18 @@ router.delete('/api-key/remove', async (req, res) => {
       reinitializeClaudeIntegration();
     }
 
-    console.log('[Admin] Anthropic API key removed');
+    console.log('[Admin] Anthropic API key removed from Secret Manager');
 
     res.json({
       success: true,
-      message: 'API key removed successfully',
+      message: 'API key removed successfully from Secret Manager',
       configured: false
     });
   } catch (error) {
-    console.error('Error removing API key:', error);
+    console.error('[Admin] Error removing API key:', error);
     res.status(500).json({
       success: false,
-      error: 'Failed to remove API key'
+      error: 'Failed to remove API key: ' + error.message
     });
   }
 });

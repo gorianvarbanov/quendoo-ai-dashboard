@@ -15,6 +15,7 @@ import { QuendooClaudeIntegration } from './quendooClaudeIntegration.js';
 import adminAuth from './auth/adminAuth.js';
 import { requireAuth } from './auth/authMiddleware.js';
 import { getSystemPrompt } from './systemPrompts.js';
+import { getSecret, isSecretConfigured } from './secretManager.js';
 import {
   InputValidator,
   OutputFilter,
@@ -55,30 +56,58 @@ app.use(express.json());
 const mcpManager = new MCPClientManager();
 
 // Initialize Claude Integration (using backend API key only)
-// API key is stored server-side for security
+// API key is stored in Google Cloud Secret Manager for security
 let claudeIntegration = null;
 let currentApiKey = process.env.ANTHROPIC_API_KEY;
 
-function initializeClaudeIntegration() {
-  if (currentApiKey && currentApiKey !== 'your-api-key-here') {
-    claudeIntegration = new ClaudeIntegration(currentApiKey, mcpManager);
-    console.log('Claude API integration enabled (backend API key)');
-    return true;
-  } else {
-    claudeIntegration = null;
-    console.log('Claude API key not configured on backend');
-    return false;
+async function initializeClaudeIntegration() {
+  try {
+    // Try to load from Secret Manager first (for production)
+    const secretConfigured = await isSecretConfigured('anthropic-api-key');
+    if (secretConfigured) {
+      currentApiKey = await getSecret('anthropic-api-key');
+      console.log('[Init] Loaded API key from Secret Manager');
+    } else {
+      // Fallback to environment variable (for local development)
+      currentApiKey = process.env.ANTHROPIC_API_KEY;
+      console.log('[Init] Using API key from environment variable');
+    }
+
+    if (currentApiKey && currentApiKey !== 'your-api-key-here') {
+      claudeIntegration = new ClaudeIntegration(currentApiKey, mcpManager);
+      console.log('[Init] Claude API integration enabled');
+      return true;
+    } else {
+      claudeIntegration = null;
+      console.log('[Init] Claude API key not configured');
+      return false;
+    }
+  } catch (error) {
+    // If Secret Manager fails (e.g., local development), use env variable
+    console.warn('[Init] Secret Manager not available, using environment variable:', error.message);
+    currentApiKey = process.env.ANTHROPIC_API_KEY;
+
+    if (currentApiKey && currentApiKey !== 'your-api-key-here') {
+      claudeIntegration = new ClaudeIntegration(currentApiKey, mcpManager);
+      console.log('[Init] Claude API integration enabled (env fallback)');
+      return true;
+    } else {
+      claudeIntegration = null;
+      console.log('[Init] Claude API key not configured');
+      return false;
+    }
   }
 }
 
 // Export function to reinitialize when API key changes
-export function reinitializeClaudeIntegration() {
-  currentApiKey = process.env.ANTHROPIC_API_KEY;
-  return initializeClaudeIntegration();
+export async function reinitializeClaudeIntegration() {
+  return await initializeClaudeIntegration();
 }
 
-// Initialize on startup
-initializeClaudeIntegration();
+// Initialize on startup (async)
+initializeClaudeIntegration().catch(err => {
+  console.error('[Init] Failed to initialize Claude integration:', err);
+});
 
 // Store Quendoo integration instances per conversation
 const quendooIntegrations = new Map(); // conversationId -> QuendooClaudeIntegration instance
