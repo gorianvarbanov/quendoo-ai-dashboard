@@ -310,7 +310,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import AdminLayout from './AdminLayout.vue'
-import chatApi from '@/services/api'
+import { chatApi } from '@/services/api'
 
 // State
 const loading = ref(false)
@@ -407,10 +407,16 @@ const paginatedConversations = computed(() => {
 
 // Methods
 const loadConversations = async () => {
+  console.log('[Admin] Starting to load conversations...')
   loading.value = true
   try {
+    console.log('[Admin] Calling chatApi.getConversations()...')
     const response = await chatApi.getConversations()
+    console.log('[Admin] Response:', response)
+    console.log('[Admin] Response type:', typeof response)
+    console.log('[Admin] Has conversations property:', 'conversations' in response)
     if (response.conversations && Array.isArray(response.conversations)) {
+      console.log('[Admin] Found', response.conversations.length, 'conversations')
       conversations.value = response.conversations.map(conv => ({
         id: conv.id,
         title: conv.title || 'Untitled Conversation',
@@ -422,12 +428,16 @@ const loadConversations = async () => {
           : conv.updatedAt,
         messageCount: conv.messageCount || 0
       }))
-      console.log(`[Admin] Loaded ${conversations.value.length} conversations`)
+      console.log(`[Admin] Loaded ${conversations.value.length} conversations successfully`)
+    } else {
+      console.warn('[Admin] No conversations array in response')
     }
   } catch (error) {
     console.error('[Admin] Failed to load conversations:', error)
+    console.error('[Admin] Error details:', error.message, error.stack)
   } finally {
     loading.value = false
+    console.log('[Admin] Loading complete')
   }
 }
 
