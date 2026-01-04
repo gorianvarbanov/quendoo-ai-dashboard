@@ -229,6 +229,67 @@ app.get('/admin/security/stats', requireAuth, (req, res) => {
 });
 
 /**
+ * Conversation Management API
+ */
+
+/**
+ * Get all conversations
+ * GET /conversations
+ * Query params: limit (optional)
+ */
+app.get('/conversations', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+    const conversations = await conversationService.getConversations('default', limit);
+    res.json({ conversations });
+  } catch (error) {
+    console.error('[Conversations] Error fetching conversations:', error);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
+/**
+ * Get specific conversation with messages
+ * GET /conversations/:id
+ */
+app.get('/conversations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const conversation = await conversationService.getConversationWithMessages(id);
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    res.json({ conversation });
+  } catch (error) {
+    console.error('[Conversations] Error fetching conversation:', error);
+    res.status(500).json({ error: 'Failed to fetch conversation' });
+  }
+});
+
+/**
+ * Delete a conversation
+ * DELETE /conversations/:id
+ */
+app.delete('/conversations/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await conversationService.deleteConversation(id);
+
+    // Log audit event
+    logAudit(LOG_TYPES.CONVERSATION, LOG_ACTIONS.CONVERSATION_DELETED, {
+      conversationId: id
+    });
+
+    res.json({ success: true, message: 'Conversation deleted' });
+  } catch (error) {
+    console.error('[Conversations] Error deleting conversation:', error);
+    res.status(500).json({ error: 'Failed to delete conversation' });
+  }
+});
+
+/**
  * Get recent security events (admin only)
  * GET /admin/security/events
  * Query params: ?limit=50&type=input_blocked
