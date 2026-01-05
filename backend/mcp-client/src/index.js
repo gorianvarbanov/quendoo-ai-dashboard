@@ -745,65 +745,169 @@ app.post('/chat/quendoo', async (req, res) => {
       console.log(`[Chat/Quendoo] Reusing existing MCP session for conversation: ${finalConversationId}`);
     }
 
-    // Process message with Claude integration
-    const result = await quendooIntegration.processMessage(
-      message,
-      finalConversationId,
-      model,
-      finalSystemPrompt,
-      quendooApiKey  // User-provided Quendoo API key
-    );
+    // Check if client wants SSE streaming (based on Accept header)
+    const acceptsSSE = req.headers.accept && req.headers.accept.includes('text/event-stream');
 
-    // === SECURITY: Log successful request ===
-    securityMonitor.logRequestSuccess(finalConversationId);
+    if (acceptsSSE) {
+      // === SSE STREAMING MODE ===
+      console.log(`[Chat/Quendoo] Using SSE streaming mode`);
 
-    // === DATABASE: Persist messages to Firestore ===
-    try {
-      // Create hotel ID from Quendoo API key
-      const hotelId = createHotelId(quendooApiKey);
+      // Set SSE headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no' // Disable nginx buffering
+      });
 
-      // Check if conversation exists, create if not
-      const existingConv = await conversationService.getConversation(finalConversationId);
-      if (!existingConv) {
-        await conversationService.createConversation(hotelId, {
-          title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
-          conversationId: finalConversationId
+      // Send initial connection event
+      res.write(`data: ${JSON.stringify({ type: 'connected', conversationId: finalConversationId })}\n\n`);
+
+      try {
+        // Process message with streaming callbacks
+        const result = await quendooIntegration.processMessageWithStreaming(
+          message,
+          finalConversationId,
+          model,
+          finalSystemPrompt,
+          quendooApiKey,
+          {
+            // Callback for when a tool starts executing
+            onToolStart: (toolName, toolParams) => {
+              console.log(`[SSE] Tool started: ${toolName}`);
+              res.write(`data: ${JSON.stringify({
+                type: 'tool_start',
+                tool: { name: toolName, params: toolParams, status: 'running' }
+              })}\n\n`);
+            },
+            // Callback for when a tool completes
+            onToolComplete: (toolName, toolParams, duration) => {
+              console.log(`[SSE] Tool completed: ${toolName} (${duration}ms)`);
+              res.write(`data: ${JSON.stringify({
+                type: 'tool_progress',
+                tool: { name: toolName, params: toolParams, duration, status: 'completed' }
+              })}\n\n`);
+            },
+            // Callback for thinking/processing
+            onThinking: () => {
+              res.write(`data: ${JSON.stringify({ type: 'thinking' })}\n\n`);
+            }
+          }
+        );
+
+        // === DATABASE: Persist messages to Firestore ===
+        try {
+          const hotelId = createHotelId(quendooApiKey);
+          const existingConv = await conversationService.getConversation(finalConversationId);
+          if (!existingConv) {
+            await conversationService.createConversation(hotelId, {
+              title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
+              conversationId: finalConversationId
+            });
+          }
+          await conversationService.addMessage(finalConversationId, 'user', message, {
+            model: model || 'claude-sonnet-4-5-20250929'
+          });
+          await conversationService.addMessage(finalConversationId, 'assistant', result.content, {
+            toolsUsed: result.toolsUsed,
+            model: model || 'claude-sonnet-4-5-20250929'
+          });
+        } catch (dbError) {
+          console.error('[Database] Failed to persist messages:', dbError.message);
+        }
+
+        // Send final completion event
+        res.write(`data: ${JSON.stringify({
+          type: 'complete',
+          response: {
+            role: 'assistant',
+            content: result.content,
+            timestamp: new Date().toISOString(),
+            toolsUsed: result.toolsUsed
+          }
+        })}\n\n`);
+
+        // === SECURITY: Log successful request ===
+        securityMonitor.logRequestSuccess(finalConversationId);
+
+        // === AUDIT: Log message sent ===
+        logAudit(LOG_TYPES.CONVERSATION, LOG_ACTIONS.MESSAGE_SENT, {
+          conversationId: finalConversationId,
+          messageLength: message.length,
+          model: model || 'claude-sonnet-4-5-20250929'
         });
+
+        res.end();
+      } catch (streamError) {
+        console.error('[SSE] Stream error:', streamError);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Stream processing failed' })}\n\n`);
+        res.end();
+        quendooIntegrations.delete(finalConversationId);
+      }
+    } else {
+      // === REGULAR JSON MODE (backwards compatibility) ===
+      console.log(`[Chat/Quendoo] Using regular JSON mode`);
+
+      // Process message with Claude integration
+      const result = await quendooIntegration.processMessage(
+        message,
+        finalConversationId,
+        model,
+        finalSystemPrompt,
+        quendooApiKey  // User-provided Quendoo API key
+      );
+
+      // === SECURITY: Log successful request ===
+      securityMonitor.logRequestSuccess(finalConversationId);
+
+      // === DATABASE: Persist messages to Firestore ===
+      try {
+        // Create hotel ID from Quendoo API key
+        const hotelId = createHotelId(quendooApiKey);
+
+        // Check if conversation exists, create if not
+        const existingConv = await conversationService.getConversation(finalConversationId);
+        if (!existingConv) {
+          await conversationService.createConversation(hotelId, {
+            title: message.substring(0, 50) + (message.length > 50 ? '...' : ''),
+            conversationId: finalConversationId
+          });
+        }
+
+        // Save user message
+        await conversationService.addMessage(finalConversationId, 'user', message, {
+          model: model || 'claude-sonnet-4-5-20250929'
+        });
+
+        // Save assistant response
+        await conversationService.addMessage(finalConversationId, 'assistant', result.content, {
+          toolsUsed: result.toolsUsed,
+          model: model || 'claude-sonnet-4-5-20250929'
+        });
+
+        console.log(`[Database] Saved messages to conversation: ${finalConversationId}`);
+      } catch (dbError) {
+        console.error('[Database] Failed to persist messages:', dbError.message);
+        // Don't fail the request if database save fails
       }
 
-      // Save user message
-      await conversationService.addMessage(finalConversationId, 'user', message, {
+      // === AUDIT: Log message sent ===
+      logAudit(LOG_TYPES.CONVERSATION, LOG_ACTIONS.MESSAGE_SENT, {
+        conversationId: finalConversationId,
+        messageLength: message.length,
         model: model || 'claude-sonnet-4-5-20250929'
       });
 
-      // Save assistant response
-      await conversationService.addMessage(finalConversationId, 'assistant', result.content, {
-        toolsUsed: result.toolsUsed,
-        model: model || 'claude-sonnet-4-5-20250929'
+      res.json({
+        conversationId: finalConversationId,
+        response: {
+          role: 'assistant',
+          content: result.content,
+          timestamp: new Date().toISOString(),
+          toolsUsed: result.toolsUsed
+        }
       });
-
-      console.log(`[Database] Saved messages to conversation: ${finalConversationId}`);
-    } catch (dbError) {
-      console.error('[Database] Failed to persist messages:', dbError.message);
-      // Don't fail the request if database save fails
     }
-
-    // === AUDIT: Log message sent ===
-    logAudit(LOG_TYPES.CONVERSATION, LOG_ACTIONS.MESSAGE_SENT, {
-      conversationId: finalConversationId,
-      messageLength: message.length,
-      model: model || 'claude-sonnet-4-5-20250929'
-    });
-
-    res.json({
-      conversationId: finalConversationId,
-      response: {
-        role: 'assistant',
-        content: result.content,
-        timestamp: new Date().toISOString(),
-        toolsUsed: result.toolsUsed
-      }
-    });
 
   } catch (error) {
     console.error('Quendoo chat processing failed:', error);
@@ -811,7 +915,14 @@ app.post('/chat/quendoo', async (req, res) => {
     const { conversationId } = req.body;
     const convId = conversationId || `conv_${Date.now()}`;
     quendooIntegrations.delete(convId);
-    res.status(500).json({ error: 'Internal server error' });
+
+    // Check if response already started (SSE mode)
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: 'Internal server error' })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 });
 

@@ -629,6 +629,241 @@ export class QuendooClaudeIntegration {
   }
 
   /**
+   * Process message with real-time streaming callbacks for tool execution
+   * @param {Object} callbacks - { onToolStart, onToolComplete, onThinking }
+   */
+  async processMessageWithStreaming(message, conversationId, model, systemPrompt, quendooApiKey, callbacks = {}) {
+    // Store the Quendoo API key for this request
+    this.currentQuendooApiKey = quendooApiKey;
+
+    // Connect to MCP server if not already connected
+    await this.connectToMCPServer();
+
+    // Get or create conversation history
+    if (!this.conversationHistories.has(conversationId)) {
+      this.conversationHistories.set(conversationId, []);
+    }
+    const history = this.conversationHistories.get(conversationId);
+
+    // Add user message to history
+    history.push({
+      role: 'user',
+      content: message
+    });
+
+    try {
+      console.log(`[Quendoo Claude] Processing message with streaming callbacks`);
+
+      // Detect task complexity
+      const complexity = this.detectTaskComplexity(message);
+      console.log(`[Quendoo] Task complexity: ${complexity}`);
+
+      // Convert MCP tools to Claude format
+      const claudeTools = this.availableTools.map(tool => ({
+        name: tool.name,
+        description: tool.description || '',
+        input_schema: tool.inputSchema || { type: 'object', properties: {} }
+      }));
+
+      // Build request parameters
+      const requestParams = {
+        model: model,
+        max_tokens: 4096,
+        system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
+        messages: history,
+        tools: claudeTools
+      };
+
+      // For simple tasks, force immediate tool use
+      if (complexity === 'simple' && claudeTools.length > 0) {
+        requestParams.tool_choice = { type: "any" };
+      }
+
+      // Emit thinking callback
+      if (callbacks.onThinking) {
+        callbacks.onThinking();
+      }
+
+      // Track tools used for frontend display
+      const toolsUsedInfo = [];
+
+      // Multi-tool execution loop
+      const maxLoops = 10;
+      let loopCount = 0;
+      let finalResponse = null;
+
+      while (loopCount < maxLoops) {
+        loopCount++;
+        console.log(`[Quendoo] Loop iteration ${loopCount}/${maxLoops}`);
+
+        // Call Claude with tools
+        const response = await this.anthropic.messages.create(requestParams);
+        finalResponse = response;
+
+        console.log(`[Quendoo] Response stop_reason: ${response.stop_reason}`);
+
+        // Add Claude's response to history
+        history.push({
+          role: 'assistant',
+          content: response.content
+        });
+
+        // Check if Claude wants to use tools
+        if (response.stop_reason === 'tool_use') {
+          // Execute all tool calls
+          const toolResults = [];
+          for (const block of response.content) {
+            if (block.type === 'tool_use') {
+              console.log(`[Quendoo Streaming] Executing tool: ${block.name}`);
+
+              // Emit tool start callback
+              if (callbacks.onToolStart) {
+                callbacks.onToolStart(block.name, block.input);
+              }
+
+              const startTime = Date.now();
+
+              try {
+                const result = await this.sendRequest({
+                  method: 'tools/call',
+                  params: {
+                    name: block.name,
+                    arguments: block.input
+                  }
+                });
+
+                const duration = Date.now() - startTime;
+
+                if (result.error) {
+                  throw new Error(result.error.message);
+                }
+
+                // Track tool usage
+                const toolInfo = {
+                  name: block.name,
+                  params: block.input,
+                  duration: duration,
+                  success: true
+                };
+                toolsUsedInfo.push(toolInfo);
+
+                // Emit tool complete callback
+                if (callbacks.onToolComplete) {
+                  callbacks.onToolComplete(block.name, block.input, duration);
+                }
+
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: block.id,
+                  content: JSON.stringify(result.result)
+                });
+              } catch (error) {
+                console.error(`[Quendoo Streaming] Tool execution failed:`, error);
+
+                const duration = Date.now() - startTime;
+
+                const toolInfo = {
+                  name: block.name,
+                  params: block.input,
+                  duration: duration,
+                  success: false,
+                  error: error.message
+                };
+                toolsUsedInfo.push(toolInfo);
+
+                // Still emit complete callback with error
+                if (callbacks.onToolComplete) {
+                  callbacks.onToolComplete(block.name, block.input, duration, error.message);
+                }
+
+                toolResults.push({
+                  type: 'tool_result',
+                  tool_use_id: block.id,
+                  content: JSON.stringify({ error: error.message }),
+                  is_error: true
+                });
+              }
+            }
+          }
+
+          // Add tool results to history
+          history.push({
+            role: 'user',
+            content: toolResults
+          });
+
+          // Update request params to continue conversation with tool results
+          requestParams.messages = history;
+
+          // Continue loop to let Claude process tool results
+          continue;
+        }
+
+        // Check if Claude stopped but hasn't completed all expected tasks
+        if (finalResponse.stop_reason === 'end_turn') {
+          const textContent = finalResponse.content.find(b => b.type === 'text');
+          const hasTextContent = !!textContent;
+
+          console.log(`[Quendoo] Claude stopped with end_turn, tools executed: ${toolsUsedInfo.length}`);
+
+          // Only attempt to continue if very few tools were executed AND text suggests incompletion
+          if (hasTextContent && toolsUsedInfo.length < 2 && loopCount < 3) {
+            const text = textContent.text.toLowerCase();
+            const completionIndicators = [
+              'complete', 'done', 'finished', 'all tasks', 'successfully',
+              'завърши', 'готово', 'изпълни', 'изпрати'
+            ];
+            const indicatesCompletion = completionIndicators.some(indicator => text.includes(indicator));
+
+            if (!indicatesCompletion) {
+              console.log('[Quendoo] Attempting to continue execution (incomplete task detected)...');
+              history.push({
+                role: 'user',
+                content: [{
+                  type: 'text',
+                  text: 'Continue with the remaining tasks. Call all necessary tools to complete the request.'
+                }]
+              });
+              requestParams.messages = history;
+              continue;
+            }
+          }
+        }
+
+        // No more tools to execute, exit loop
+        break;
+      }
+
+      // Extract final content
+      const rawContent = this.extractContent(finalResponse);
+
+      // === SECURITY: Output Filtering ===
+      const filterResult = this.outputFilter.filter(rawContent, message);
+      const content = filterResult.content;
+
+      if (filterResult.filtered) {
+        console.log(`[Security] Response replaced: ${filterResult.reason}`);
+      }
+
+      // Keep history manageable
+      if (history.length > 20) {
+        history.splice(0, history.length - 20);
+      }
+
+      console.log(`[Quendoo Streaming] Completed with ${toolsUsedInfo.length} tool(s)`);
+
+      return {
+        content,
+        toolsUsed: filterResult.filtered ? false : toolsUsedInfo
+      };
+
+    } catch (error) {
+      console.error('[Quendoo Streaming] Error processing message:', error);
+      throw new Error(`Claude API error: ${error.status} ${JSON.stringify(error.error || error.message)}`);
+    }
+  }
+
+  /**
    * Extract text content from Claude response
    */
   extractContent(response) {

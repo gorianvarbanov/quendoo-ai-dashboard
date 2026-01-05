@@ -274,33 +274,118 @@ export const useChatStore = defineStore('chat', () => {
 
       // Set loading state
       isLoading.value = true
+      isStreaming.value = true
       error.value = null
 
       // Get Quendoo API key from settings
       const settingsStore = useSettingsStore()
       const quendooApiKey = settingsStore.quendooApiKey
 
-      // Send message to backend with conversation ID
-      // Backend will maintain MCP session per conversation for context continuity
-      const response = await chatApi.sendMessage(
-        content.trim(),
-        conversationId,  // Send conversation ID to maintain MCP session
-        serverId,
-        selectedModel.value,
-        quendooApiKey  // User's Quendoo API key from Settings
-      )
+      // Track tools being executed in real-time
+      const toolsInProgress = ref([])
 
-      // Add AI response message with tools used
+      // Create a temporary assistant message that will be updated in real-time
+      const tempMessageId = `msg_${Date.now()}_temp`
       addMessage(conversationId, {
+        id: tempMessageId,
         role: 'assistant',
-        content: response.response.content,
-        timestamp: response.response.timestamp,
-        toolsUsed: response.response.toolsUsed || []
+        content: '',  // Will be filled when complete
+        timestamp: new Date().toISOString(),
+        toolsUsed: toolsInProgress.value,
+        isStreaming: true  // Mark as streaming
       })
 
-      isLoading.value = false
+      // Send message using SSE streaming
+      await chatApi.sendMessageStreaming(
+        content.trim(),
+        conversationId,
+        serverId,
+        selectedModel.value,
+        quendooApiKey,
+        {
+          // Real-time callback when a tool starts
+          onToolStart: (toolName, toolParams) => {
+            console.log(`[Chat Store] Tool started: ${toolName}`)
+            toolsInProgress.value.push({
+              name: toolName,
+              params: toolParams,
+              status: 'running'
+            })
+
+            // Update the temporary message with current tools
+            const msgs = messages.value.get(conversationId)
+            const tempMsg = msgs.find(m => m.id === tempMessageId)
+            if (tempMsg) {
+              tempMsg.toolsUsed = [...toolsInProgress.value]
+            }
+            saveToStorage()
+          },
+
+          // Real-time callback when a tool completes
+          onToolProgress: (tool) => {
+            console.log(`[Chat Store] Tool completed: ${tool.name} (${tool.duration}ms)`)
+
+            // Find and update the tool in progress
+            const toolInProgress = toolsInProgress.value.find(t => t.name === tool.name && t.status === 'running')
+            if (toolInProgress) {
+              toolInProgress.status = 'completed'
+              toolInProgress.duration = tool.duration
+            }
+
+            // Update the temporary message
+            const msgs = messages.value.get(conversationId)
+            const tempMsg = msgs.find(m => m.id === tempMessageId)
+            if (tempMsg) {
+              tempMsg.toolsUsed = [...toolsInProgress.value]
+            }
+            saveToStorage()
+          },
+
+          // Final callback when complete
+          onComplete: (response) => {
+            console.log('[Chat Store] Streaming complete')
+
+            // Remove temporary message
+            const msgs = messages.value.get(conversationId)
+            const tempMsgIndex = msgs.findIndex(m => m.id === tempMessageId)
+            if (tempMsgIndex !== -1) {
+              msgs.splice(tempMsgIndex, 1)
+            }
+
+            // Add final AI response with all tools used
+            addMessage(conversationId, {
+              role: 'assistant',
+              content: response.content,
+              timestamp: response.timestamp,
+              toolsUsed: response.toolsUsed || []
+            })
+
+            isLoading.value = false
+            isStreaming.value = false
+          },
+
+          // Error callback
+          onError: (error) => {
+            console.error('[Chat Store] Streaming error:', error)
+
+            // Remove temporary message
+            const msgs = messages.value.get(conversationId)
+            const tempMsgIndex = msgs.findIndex(m => m.id === tempMessageId)
+            if (tempMsgIndex !== -1) {
+              msgs.splice(tempMsgIndex, 1)
+            }
+
+            isLoading.value = false
+            isStreaming.value = false
+            setError(error.message || 'Failed to send message')
+          }
+        }
+      )
+
     } catch (err) {
       console.error('[Chat Store] Send message error:', err)
+      isLoading.value = false
+      isStreaming.value = false
       setError(err.response?.data?.error || err.message || 'Failed to send message')
     }
   }

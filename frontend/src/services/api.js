@@ -115,6 +115,85 @@ export const chatApi = {
   },
 
   /**
+   * Send a message with SSE streaming for real-time tool progress
+   * @param {string} content - Message content
+   * @param {string} conversationId - Conversation ID
+   * @param {string} serverId - Optional server ID
+   * @param {string} model - Claude model to use
+   * @param {string} quendooApiKey - User's Quendoo API key
+   * @param {Object} callbacks - { onToolStart, onToolProgress, onComplete, onError }
+   */
+  async sendMessageStreaming(content, conversationId, serverId, model, quendooApiKey, callbacks = {}) {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+    const url = `${baseUrl}/chat/quendoo`
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream'  // Request SSE streaming
+        },
+        body: JSON.stringify({
+          message: content,
+          conversationId,
+          serverId,
+          model,
+          quendooApiKey
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        // Decode chunk and add to buffer
+        buffer += decoder.decode(value, { stream: true })
+
+        // Process complete SSE messages
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (data.type === 'connected') {
+                console.log('[SSE] Connected to stream')
+              } else if (data.type === 'tool_start') {
+                callbacks.onToolStart?.(data.tool.name, data.tool.params)
+              } else if (data.type === 'tool_progress') {
+                callbacks.onToolProgress?.(data.tool)
+              } else if (data.type === 'thinking') {
+                // Claude is thinking (optional callback)
+              } else if (data.type === 'complete') {
+                callbacks.onComplete?.(data.response)
+              } else if (data.type === 'error') {
+                callbacks.onError?.(new Error(data.error))
+              }
+            } catch (err) {
+              console.error('[SSE] Failed to parse event:', err, line)
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[SSE] Connection error:', error)
+      callbacks.onError?.(error)
+    }
+  },
+
+  /**
    * Get all conversations
    * @returns {Promise<Object>} Response with conversations array
    */
