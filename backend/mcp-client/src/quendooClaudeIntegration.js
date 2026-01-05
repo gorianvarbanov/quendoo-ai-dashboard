@@ -548,26 +548,45 @@ export class QuendooClaudeIntegration {
 
       // Check if Claude stopped but hasn't completed all expected tasks
       if (finalResponse.stop_reason === 'end_turn') {
-        // Check if there's text content indicating unfinished work
-        const hasTextContent = finalResponse.content.some(b => b.type === 'text');
+        // Check if there's text content
+        const textContent = finalResponse.content.find(b => b.type === 'text');
+        const hasTextContent = !!textContent;
 
         console.log(`[Quendoo] Claude stopped with end_turn, tools executed: ${toolsUsedInfo.length}`);
 
-        // If Claude wrote text but we expected more tools, try to continue
-        if (hasTextContent && loopCount < maxLoops) {
-          console.log('[Quendoo] Attempting to continue execution...');
+        // Only attempt to continue if:
+        // 1. Very few tools were executed (< 2) AND
+        // 2. Text content suggests incompletion (doesn't contain final indicators)
+        // 3. We haven't looped too many times
+        if (hasTextContent && toolsUsedInfo.length < 2 && loopCount < 3) {
+          const text = textContent.text.toLowerCase();
 
-          // Add continuation prompt
-          history.push({
-            role: 'user',
-            content: [{
-              type: 'text',
-              text: 'Continue with the remaining tasks. Call all necessary tools to complete the request.'
-            }]
-          });
+          // Check if text indicates completion (contains completion phrases)
+          const completionIndicators = [
+            'complete', 'done', 'finished', 'all tasks', 'successfully',
+            'завърши', 'готово', 'изпълни', 'изпрати'
+          ];
+          const indicatesCompletion = completionIndicators.some(indicator =>
+            text.includes(indicator)
+          );
 
-          // Continue loop
-          continue;
+          if (!indicatesCompletion) {
+            console.log('[Quendoo] Attempting to continue execution (incomplete task detected)...');
+
+            // Add continuation prompt
+            history.push({
+              role: 'user',
+              content: [{
+                type: 'text',
+                text: 'Continue with the remaining tasks. Call all necessary tools to complete the request.'
+              }]
+            });
+
+            // Continue loop
+            continue;
+          } else {
+            console.log('[Quendoo] Task appears complete, not continuing loop');
+          }
         }
       }
 

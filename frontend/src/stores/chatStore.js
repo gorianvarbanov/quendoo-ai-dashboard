@@ -16,7 +16,7 @@ export const useChatStore = defineStore('chat', () => {
   const streamingMessage = ref('')
   const isStreaming = ref(false)
   const error = ref(null)
-  const selectedModel = ref('claude-3-5-haiku-20241022') // Default model - Haiku 3.5
+  const selectedModel = ref('claude-sonnet-4-20250514') // Default model - Claude 4 Sonnet
 
   // Load conversations from database API
   function loadFromLocalStorage() {

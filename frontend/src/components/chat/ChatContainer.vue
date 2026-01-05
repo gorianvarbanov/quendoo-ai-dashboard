@@ -302,13 +302,13 @@ let searchTimeout = null
 
 // Model mapping - display names to API model IDs
 const modelMap = {
+  'Claude 4 Sonnet': 'claude-sonnet-4-20250514',
   'Claude Sonnet 3.5': 'claude-3-5-sonnet-20241022',
-  'Claude Opus 3': 'claude-3-opus-20240229',
-  'Claude Haiku 3.5': 'claude-3-5-haiku-20241022'
+  'Claude Opus 3': 'claude-3-opus-20240229'
 }
 
 const models = ref(Object.keys(modelMap))
-const selectedModel = ref('Claude Haiku 3.5')
+const selectedModel = ref('Claude 4 Sonnet')
 
 // Watch for model changes and update store
 watch(selectedModel, (newDisplayName) => {
