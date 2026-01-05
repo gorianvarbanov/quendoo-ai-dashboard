@@ -136,21 +136,54 @@ export const VALIDATION_CONFIG = {
 
           // Check each object in the array
           for (const item of values) {
-            const requiredFields = ['date', 'room_id', 'avail', 'qty', 'is_opened'];
-            for (const field of requiredFields) {
-              if (!(field in item)) {
+            // room_id or ext_room_id is required
+            if (!('room_id' in item) && !('ext_room_id' in item)) {
+              return {
+                valid: false,
+                reason: 'Missing required field: room_id or ext_room_id'
+              };
+            }
+
+            // Must have either 'date' OR 'date_from+date_to' (for period updates)
+            const hasSingleDate = 'date' in item;
+            const hasDateRange = 'date_from' in item && 'date_to' in item;
+
+            if (!hasSingleDate && !hasDateRange) {
+              return {
+                valid: false,
+                reason: 'Must provide either date (for single day) or date_from+date_to (for period)'
+              };
+            }
+
+            // Validate single date format
+            if (hasSingleDate && !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+              return {
+                valid: false,
+                reason: 'date must be in YYYY-MM-DD format'
+              };
+            }
+
+            // Validate date range format
+            if (hasDateRange) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date_from)) {
                 return {
                   valid: false,
-                  reason: `Missing required field '${field}' in values array object`
+                  reason: 'date_from must be in YYYY-MM-DD format'
+                };
+              }
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date_to)) {
+                return {
+                  valid: false,
+                  reason: 'date_to must be in YYYY-MM-DD format'
                 };
               }
             }
 
-            // Validate date format
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(item.date)) {
+            // At least one action field should be present (qty, opened, closed)
+            if (!('qty' in item) && !('opened' in item) && !('closed' in item)) {
               return {
                 valid: false,
-                reason: 'Date must be in YYYY-MM-DD format'
+                reason: 'Must provide at least one action: qty, opened, or closed'
               };
             }
           }

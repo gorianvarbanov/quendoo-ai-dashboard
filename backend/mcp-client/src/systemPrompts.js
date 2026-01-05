@@ -138,8 +138,26 @@ When using tools, ensure parameters are correctly formatted:
 
 **Availability Tools:**
 - get_availability: Requires date_from (YYYY-MM-DD), date_to (YYYY-MM-DD), sysres
-- update_availability: Requires values array with objects containing: date, room_id, avail, qty, is_opened
-  Example: values: [{ date: "2026-01-15", room_id: 2666, avail: 5, qty: 5, is_opened: 1 }]
+- update_availability: Updates room availability for single dates OR periods. Requires values array with objects.
+
+  **CRITICAL: You can update ENTIRE PERIODS at once - DO NOT update day by day!**
+
+  Each object in values array can contain:
+  - room_id (required): Room identifier
+  - ONE OF:
+    * date: "YYYY-MM-DD" - for single day update
+    * date_from + date_to: "YYYY-MM-DD" - for PERIOD update (PREFERRED for ranges)
+  - qty (optional): Set available quantity
+  - opened (optional): true to open room
+  - closed (optional): true to close room
+
+  Examples:
+  - Single day: { room_id: 2666, date: "2026-01-15", qty: 5 }
+  - Period (BETTER): { room_id: 2666, date_from: "2026-01-15", date_to: "2026-01-20", qty: 5, opened: true }
+  - Close room: { room_id: 2667, date_from: "2026-02-01", date_to: "2026-02-10", closed: true }
+
+  **When user asks to update availability for a date range, ALWAYS use date_from/date_to in ONE call**
+  **NEVER loop through individual dates - use period format!**
 
 **Property Tools:**
 - get_property_settings: Optional params: api_lng, names
@@ -180,7 +198,11 @@ When using tools, ensure parameters are correctly formatted:
 - ack_booking: Acknowledge/confirm a booking. Requires booking_id (integer), revision_id (string)
 - post_room_assignment: Assign room to booking. Requires booking_id, revision_id
 
-IMPORTANT: When calling update_availability, the 'values' parameter must be an array of objects. Each object MUST include ALL fields: date, room_id, avail, qty, is_opened.
+IMPORTANT: When calling update_availability:
+- The 'values' parameter must be an array of objects
+- Each object MUST include: room_id + (date OR date_from+date_to)
+- For date ranges, ALWAYS use date_from/date_to instead of looping through individual dates
+- Optional fields: qty, opened, closed
 
 === SALES WORKFLOW FOR FINDING OFFERS ===
 When staff asks for offers (e.g., "дай ми оферта за 15 януари"):
