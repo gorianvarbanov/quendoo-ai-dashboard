@@ -96,17 +96,16 @@
       </div>
 
       <!-- Tool Execution Loading (shown while streaming) -->
-      <div v-if="!isUser && isStreaming && props.message.content && props.message.content.includes('tool')" class="tools-loading">
+      <div v-if="!isUser && isStreaming" class="tools-loading">
         <div class="loading-header">
-          <v-icon size="16" color="primary" class="loading-icon">mdi-cog</v-icon>
-          <span class="loading-title">Executing tools...</span>
           <v-progress-circular
             indeterminate
             size="16"
             width="2"
             color="primary"
-            class="loading-spinner"
+            class="loading-spinner-left"
           ></v-progress-circular>
+          <span class="loading-title">Processing...</span>
         </div>
         <div class="loading-skeleton">
           <div class="skeleton-step">
@@ -784,23 +783,15 @@ const formattedContent = computed(() => {
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.loading-icon {
-  animation: rotate 2s linear infinite;
-}
-
-@keyframes rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.loading-spinner-left {
+  margin-right: 8px;
 }
 
 .loading-title {
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: rgb(var(--v-theme-on-surface));
-}
-
-.loading-spinner {
-  margin-left: auto;
+  opacity: 0.8;
 }
 
 .loading-skeleton {

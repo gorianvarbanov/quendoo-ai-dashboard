@@ -190,7 +190,7 @@ export class QuendooClaudeIntegration {
   /**
    * Process a chat message with Claude using remote MCP server
    */
-  async processMessage(message, conversationId, model = 'claude-sonnet-4-20250514', systemPrompt = null, quendooApiKey = null) {
+  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null) {
     // Store the Quendoo API key for this request
     this.currentQuendooApiKey = quendooApiKey;
 
@@ -232,7 +232,7 @@ export class QuendooClaudeIntegration {
 
       // Handle tool use
       if (response.stop_reason === 'tool_use') {
-        return await this.handleToolUse(response, conversationId, systemPrompt);
+        return await this.handleToolUse(response, conversationId, systemPrompt, model);
       }
 
       // Extract content from response
@@ -274,7 +274,7 @@ export class QuendooClaudeIntegration {
   /**
    * Handle tool use from Claude
    */
-  async handleToolUse(response, conversationId, systemPrompt = null) {
+  async handleToolUse(response, conversationId, systemPrompt = null, model = 'claude-3-5-haiku-20241022') {
     const history = this.conversationHistories.get(conversationId);
 
     // Add Claude's tool use to history
@@ -285,6 +285,8 @@ export class QuendooClaudeIntegration {
 
     // Track tools used for frontend display
     const toolsUsedInfo = [];
+
+    console.log(`[Quendoo] Initial response has ${response.content.filter(b => b.type === 'tool_use').length} tool(s) to execute`);
 
     // Execute all tool calls via Quendoo server
     const toolResults = [];
@@ -363,7 +365,7 @@ export class QuendooClaudeIntegration {
 
       // Get Claude's response
       finalResponse = await this.anthropic.messages.create({
-        model: 'claude-3-5-haiku-20241022',
+        model: model,
         max_tokens: 4096,
         system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
         messages: history,
@@ -373,6 +375,10 @@ export class QuendooClaudeIntegration {
           input_schema: tool.inputSchema || { type: 'object', properties: {} }
         }))
       });
+
+      // Log response details
+      console.log(`[Quendoo] Claude stop_reason: ${finalResponse.stop_reason}`);
+      console.log(`[Quendoo] Claude response content blocks:`, finalResponse.content.map(b => ({ type: b.type, ...(b.type === 'tool_use' ? { name: b.name } : {}) })));
 
       // Add response to history
       history.push({
@@ -480,6 +486,9 @@ export class QuendooClaudeIntegration {
     if (filterResult.wasRedacted) {
       console.log('[Security] Sensitive data redacted from tool response');
     }
+
+    console.log(`[Quendoo] Returning ${toolsUsedInfo.length} tool(s) in response`);
+    console.log(`[Quendoo] Tools:`, toolsUsedInfo.map(t => t.name));
 
     return {
       content,
