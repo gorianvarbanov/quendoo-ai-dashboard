@@ -13,19 +13,12 @@
         v-for="message in messages"
         :key="message.id"
         :message="message"
+        :is-streaming="message.isStreaming || false"
         @typing="scrollToBottom"
       />
 
-      <!-- Streaming message placeholder -->
-      <ChatMessage
-        v-if="isStreaming && streamingMessage"
-        :message="{ role: 'assistant', content: streamingMessage, timestamp: new Date().toISOString() }"
-        :is-streaming="true"
-        @typing="scrollToBottom"
-      />
-
-      <!-- Loading indicator -->
-      <div v-if="isLoading && !isStreaming" class="loading-container">
+      <!-- AI is thinking indicator (shown before first tool starts) -->
+      <div v-if="isLoading && !hasAnyMessages" class="loading-container">
         <QuendooLoadingIcon />
         <span class="loading-text">AI is thinking...</span>
       </div>
@@ -34,7 +27,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import ChatMessage from './ChatMessage.vue'
 import QuendooLoadingIcon from '@/components/common/QuendooLoadingIcon.vue'
 
@@ -58,6 +51,11 @@ const props = defineProps({
 })
 
 const messageListRef = ref(null)
+
+// Check if we have any messages (including streaming messages)
+const hasAnyMessages = computed(() => {
+  return props.messages.some(msg => msg.isStreaming || msg.role === 'assistant')
+})
 
 // Auto-scroll to bottom when new messages arrive, loading starts, or streaming changes
 watch(

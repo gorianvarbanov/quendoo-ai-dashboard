@@ -112,14 +112,27 @@
             v-for="(tool, index) in toolsUsed"
             :key="index"
             class="loading-tool-item"
+            :class="{ 'tool-running': tool.status === 'running', 'tool-completed': tool.status === 'completed' }"
           >
-            <v-icon size="14" :color="getToolColor(tool.name)">
+            <!-- Running spinner or completed checkmark -->
+            <v-progress-circular
+              v-if="tool.status === 'running'"
+              indeterminate
+              size="14"
+              width="2"
+              color="primary"
+              class="tool-spinner"
+            ></v-progress-circular>
+            <v-icon v-else size="14" :color="getToolColor(tool.name)">
               mdi-{{ getToolIcon(tool.name) }}
             </v-icon>
             <span class="loading-tool-name">{{ tool.name }}</span>
-            <v-icon size="12" color="success" class="loading-tool-check">
+            <v-icon v-if="tool.status === 'completed'" size="12" color="success" class="loading-tool-check">
               mdi-check-circle
             </v-icon>
+            <span v-if="tool.duration && tool.status === 'completed'" class="tool-duration-small">
+              {{ tool.duration }}ms
+            </span>
           </div>
         </div>
       </div>
@@ -854,6 +867,17 @@ const formattedContent = computed(() => {
   background: rgba(var(--v-theme-surface), 0.8);
   border-radius: 6px;
   animation: slideInLeft 0.3s ease forwards;
+  transition: background 0.3s;
+}
+
+.loading-tool-item.tool-running {
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-left: 3px solid rgb(var(--v-theme-primary));
+  padding-left: 7px;
+}
+
+.loading-tool-item.tool-completed {
+  background: rgba(var(--v-theme-success), 0.05);
 }
 
 @keyframes slideInLeft {
@@ -889,6 +913,17 @@ const formattedContent = computed(() => {
     transform: scale(1);
     opacity: 1;
   }
+}
+
+.tool-spinner {
+  flex-shrink: 0;
+}
+
+.tool-duration-small {
+  font-size: 0.65rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  font-family: 'Courier New', monospace;
+  margin-left: auto;
 }
 
 .loading-skeleton {
