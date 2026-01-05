@@ -100,65 +100,80 @@
         <div class="loading-header">
           <v-progress-circular
             indeterminate
-            size="16"
-            width="2"
+            size="20"
+            width="3"
             color="primary"
-            class="loading-spinner-left"
+            class="loading-spinner"
           ></v-progress-circular>
-          <span class="loading-title">Processing...</span>
+          <span class="loading-title">Executing tools...</span>
         </div>
-        <div class="loading-skeleton">
-          <div class="skeleton-step">
-            <div class="skeleton-badge shimmer"></div>
-            <div class="skeleton-content">
-              <div class="skeleton-line shimmer"></div>
-              <div class="skeleton-line-short shimmer"></div>
-            </div>
+        <div v-if="toolsUsed && toolsUsed.length > 0" class="loading-tools-list">
+          <div
+            v-for="(tool, index) in toolsUsed"
+            :key="index"
+            class="loading-tool-item"
+          >
+            <v-icon size="14" :color="getToolColor(tool.name)">
+              mdi-{{ getToolIcon(tool.name) }}
+            </v-icon>
+            <span class="loading-tool-name">{{ tool.name }}</span>
+            <v-icon size="12" color="success" class="loading-tool-check">
+              mdi-check-circle
+            </v-icon>
           </div>
         </div>
       </div>
 
       <!-- Tools Used Timeline (shown for AI messages that used tools) -->
       <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming" class="tools-timeline-compact">
-        <div class="timeline-compact-items">
+        <!-- Accordion Header -->
+        <div class="timeline-accordion-header" @click="toggleToolsAccordion">
+          <v-icon
+            size="16"
+            color="primary"
+            class="accordion-chevron"
+            :class="{ 'accordion-open': toolsExpanded }"
+          >
+            mdi-chevron-right
+          </v-icon>
+          <span class="accordion-title">Tools Used ({{ toolsUsed.length }})</span>
+          <v-icon size="14" color="primary" class="accordion-icon">mdi-wrench</v-icon>
+        </div>
+
+        <!-- Accordion Content -->
+        <div v-show="toolsExpanded" class="timeline-compact-content">
           <div
             v-for="(tool, index) in toolsUsed"
             :key="index"
-            class="timeline-compact-item"
-            :style="{ animationDelay: `${index * 0.1}s` }"
+            class="timeline-tool-block"
           >
-            <!-- Step number -->
-            <span class="timeline-compact-number">{{ index + 1 }}</span>
-
-            <!-- Tool icon -->
-            <v-icon size="14" :color="getToolColor(tool.name)" class="timeline-compact-icon">
-              mdi-{{ getToolIcon(tool.name) }}
-            </v-icon>
-
-            <!-- Tool name -->
-            <span class="timeline-compact-name">{{ tool.name }}</span>
-
-            <!-- Duration -->
-            <span v-if="tool.duration" class="timeline-compact-duration">{{ tool.duration }}ms</span>
-
-            <!-- Expandable params -->
-            <v-menu v-if="tool.params" location="bottom" :close-on-content-click="false">
-              <template v-slot:activator="{ props }">
-                <v-icon
-                  v-bind="props"
-                  size="14"
-                  class="timeline-compact-expand"
-                  color="grey"
-                >
-                  mdi-chevron-down
+            <!-- Tool Header with Badge and Duration -->
+            <div class="tool-block-header">
+              <div class="tool-block-badge">
+                <span class="tool-block-number">{{ index + 1 }}</span>
+                <v-icon size="16" :color="getToolColor(tool.name)">
+                  mdi-{{ getToolIcon(tool.name) }}
                 </v-icon>
-              </template>
-              <v-card class="timeline-params-card" max-width="500">
-                <v-card-text class="timeline-params-content">
-                  <pre>{{ JSON.stringify(tool.params, null, 2) }}</pre>
-                </v-card-text>
-              </v-card>
-            </v-menu>
+                <span class="tool-block-name">{{ tool.name }}</span>
+              </div>
+              <span v-if="tool.duration" class="tool-block-duration">{{ tool.duration }}ms</span>
+            </div>
+
+            <!-- Tool Request Code -->
+            <div v-if="tool.params" class="tool-block-body">
+              <div class="tool-request-label">REQUEST</div>
+              <pre class="tool-request-code">{{ JSON.stringify(tool.params, null, 2) }}</pre>
+              <v-btn
+                size="x-small"
+                variant="text"
+                icon
+                class="tool-copy-btn"
+                @click="copyToolCode(tool)"
+                title="Copy request"
+              >
+                <v-icon size="14">mdi-content-copy</v-icon>
+              </v-btn>
+            </div>
           </div>
         </div>
       </div>
@@ -243,14 +258,18 @@ const isUser = computed(() => props.message.role === 'user')
 
 // Extract tools used from message metadata
 const toolsUsed = computed(() => {
+  console.log('[ChatMessage] toolsUsed data:', props.message.toolsUsed)
+
   if (!props.message.toolsUsed) return []
 
   // If toolsUsed is already an array of tool objects
   if (Array.isArray(props.message.toolsUsed)) {
+    console.log('[ChatMessage] Returning tools array:', props.message.toolsUsed)
     return props.message.toolsUsed
   }
 
   // If toolsUsed is true/false, try to extract from content or other metadata
+  console.log('[ChatMessage] toolsUsed is not an array, returning empty')
   return []
 })
 
@@ -298,6 +317,24 @@ const isTyping = ref(false)
 
 // Check if message should have typewriter effect (new AI messages only)
 const shouldAnimate = ref(false)
+
+// Tools accordion state
+const toolsExpanded = ref(false)
+
+function toggleToolsAccordion() {
+  toolsExpanded.value = !toolsExpanded.value
+}
+
+// Copy tool code to clipboard
+async function copyToolCode(tool) {
+  try {
+    const code = JSON.stringify(tool.params, null, 2)
+    await navigator.clipboard.writeText(code)
+    console.log('[ChatMessage] Tool code copied to clipboard')
+  } catch (error) {
+    console.error('[ChatMessage] Failed to copy tool code:', error)
+  }
+}
 
 onMounted(() => {
   if (!isUser.value && props.message.content && !props.isStreaming) {
@@ -777,21 +814,81 @@ const formattedContent = computed(() => {
 .loading-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
-.loading-spinner-left {
-  margin-right: 8px;
+.loading-spinner {
+  flex-shrink: 0;
+  animation: spin-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes spin-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 
 .loading-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+  letter-spacing: 0.3px;
+}
+
+.loading-tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.loading-tool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(var(--v-theme-surface), 0.8);
+  border-radius: 6px;
+  animation: slideInLeft 0.3s ease forwards;
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.loading-tool-name {
   font-size: 0.75rem;
-  font-weight: 500;
   color: rgb(var(--v-theme-on-surface));
-  opacity: 0.8;
+  flex: 1;
+}
+
+.loading-tool-check {
+  animation: checkmark-pop 0.4s ease;
+}
+
+@keyframes checkmark-pop {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .loading-skeleton {
@@ -855,12 +952,174 @@ const formattedContent = computed(() => {
 .tools-timeline-compact {
   margin-top: 10px;
   margin-bottom: 4px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.2);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
+/* Accordion Header */
+.timeline-accordion-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(var(--v-theme-primary), 0.05);
+  cursor: pointer;
+  transition: background 0.2s;
+  user-select: none;
+}
+
+.timeline-accordion-header:hover {
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.accordion-chevron {
+  transition: transform 0.3s ease;
+}
+
+.accordion-chevron.accordion-open {
+  transform: rotate(90deg);
+}
+
+.accordion-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+  flex: 1;
+}
+
+.accordion-icon {
+  opacity: 0.7;
+}
+
+/* Accordion Content Area */
+.timeline-compact-content {
+  padding: 12px;
+  background: rgba(var(--v-theme-surface), 1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Individual Tool Block */
+.timeline-tool-block {
+  background: rgba(var(--v-theme-on-surface), 0.02);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  animation: fadeInBlock 0.3s ease forwards;
+}
+
+@keyframes fadeInBlock {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Tool Block Header */
+.tool-block-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: rgba(var(--v-theme-on-surface), 0.02);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.tool-block-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-radius: 20px;
+  border: 1px solid rgba(var(--v-theme-primary), 0.2);
+}
+
+.tool-block-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-primary));
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.tool-block-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+  font-family: 'Courier New', monospace;
+}
+
+.tool-block-duration {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  background: rgba(var(--v-theme-on-surface), 0.05);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+}
+
+/* Tool Block Body (REQUEST section) */
+.tool-block-body {
+  padding: 12px;
+  background: rgba(var(--v-theme-surface), 1);
+  position: relative;
+}
+
+.tool-request-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.tool-request-code {
+  margin: 0;
+  padding: 12px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: rgb(var(--v-theme-on-surface));
+  overflow-x: auto;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.tool-copy-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.tool-copy-btn:hover {
+  opacity: 1;
+}
+
+/* Old compact item styles - keeping for backwards compatibility but not used */
 .timeline-compact-items {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 8px;
+  background: rgba(var(--v-theme-surface), 0.5);
 }
 
 .timeline-compact-item {

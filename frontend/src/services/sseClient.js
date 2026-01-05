@@ -11,6 +11,108 @@ class SSEClient {
   }
 
   /**
+   * Connect to SSE stream for chat with tool progress
+   * @param {Object} params - Request parameters
+   * @param {string} params.message - User message
+   * @param {string} params.conversationId - Conversation ID
+   * @param {string} params.model - Claude model to use
+   * @param {string} params.quendooApiKey - Quendoo API key
+   * @param {Object} callbacks - Event callbacks
+   * @param {Function} callbacks.onToolProgress - Called when tool executes
+   * @param {Function} callbacks.onComplete - Called when complete
+   * @param {Function} callbacks.onError - Called on error
+   * @param {Function} callbacks.onOpen - Called when connection opens
+   */
+  connectToChat(params, callbacks = {}) {
+    const { message, conversationId, model, quendooApiKey } = params
+
+    // Close existing connection if any
+    this.disconnect(conversationId)
+
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+    const url = `${baseUrl}/chat/quendoo`
+
+    if (import.meta.env.DEV) {
+      console.log('[SSE] Connecting to chat with tool progress:', url)
+    }
+
+    // Use fetch with SSE
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'text/event-stream'
+      },
+      body: JSON.stringify({
+        message,
+        conversationId,
+        model,
+        quendooApiKey
+      })
+    }).then(response => {
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+
+      let completeData = null
+
+      const read = () => {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            // Stream ended - call onComplete with stored data if available
+            if (completeData) {
+              callbacks.onComplete?.(completeData)
+            } else {
+              console.warn('[SSE] Stream ended without complete event')
+              callbacks.onError?.(new Error('Stream ended unexpectedly'))
+            }
+            return
+          }
+
+          const chunk = decoder.decode(value)
+          const lines = chunk.split('\n')
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
+
+                if (import.meta.env.DEV) {
+                  console.log('[SSE] Event:', data.type, data)
+                }
+
+                if (data.type === 'tool_progress') {
+                  callbacks.onToolProgress?.(data.tool)
+                } else if (data.type === 'complete') {
+                  // Store complete data and continue reading until stream ends
+                  completeData = data
+                } else if (data.type === 'error') {
+                  // Backend sent error event
+                  console.error('[SSE] Server error:', data.error)
+                  callbacks.onError?.(new Error(data.error || 'Server error'))
+                  return
+                }
+              } catch (error) {
+                console.error('[SSE] Failed to parse event:', error, line)
+              }
+            }
+          }
+
+          read()
+        }).catch(error => {
+          console.error('[SSE] Read error:', error)
+          callbacks.onError?.(error)
+        })
+      }
+
+      read()
+      callbacks.onOpen?.()
+    }).catch(error => {
+      console.error('[SSE] Connection error:', error)
+      callbacks.onError?.(error)
+    })
+  }
+
+  /**
    * Connect to SSE stream for a conversation
    * @param {string} conversationId - Conversation ID
    * @param {Object} callbacks - Event callbacks

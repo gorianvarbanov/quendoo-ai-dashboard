@@ -84,9 +84,19 @@ export const chatApi = {
    * @param {string} quendooApiKey - User's Quendoo API key
    * @returns {Promise<Object>} Response with conversation ID and AI response
    */
-  async sendMessage(content, conversationId = null, serverId = null, model = null, quendooApiKey = null) {
+  async sendMessage(content, conversationId = null, serverId = null, model = null, quendooApiKey = null, onToolProgress = null) {
     // NOTE: System prompt is now managed server-side for security
     // Client no longer sends system prompt in request body
+
+    // Check if SSE streaming is requested (when onToolProgress callback is provided)
+    if (onToolProgress) {
+      // Use SSE streaming for real-time tool progress
+      return {
+        status: 'streaming',
+        conversationId,
+        onToolProgress
+      }
+    }
 
     const response = await apiClient.post('/chat/quendoo', {
       message: content,

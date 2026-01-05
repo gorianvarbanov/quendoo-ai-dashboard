@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { chatApi } from '../services/api'
-import sseClient from '../services/sseClient'
 import { useSettingsStore } from './settingsStore'
 
 const STORAGE_KEY_CONVERSATIONS = 'quendoo-conversations'
@@ -124,7 +123,9 @@ export const useChatStore = defineStore('chat', () => {
           timestamp: msg.createdAt?._seconds
             ? new Date(msg.createdAt._seconds * 1000).toISOString()
             : msg.createdAt,
-          metadata: msg.metadata
+          metadata: msg.metadata,
+          // Preserve toolsUsed data from database
+          toolsUsed: msg.toolsUsed || msg.metadata?.toolsUsed || []
         }))
 
         messages.value.set(conversationId, formattedMessages)
@@ -289,39 +290,15 @@ export const useChatStore = defineStore('chat', () => {
         quendooApiKey  // User's Quendoo API key from Settings
       )
 
-      // Handle response based on type
-      if (response.status === 'success') {
-        // Direct JSON response - add AI message immediately
-        addMessage(conversationId, {
-          role: 'assistant',
-          content: response.response.content,
-          timestamp: response.response.timestamp,
-          toolsUsed: response.response.toolsUsed || []
-        })
-        isLoading.value = false
-      } else if (response.status === 'streaming') {
-        // SSE streaming response - connect to stream
-        startStreaming()
+      // Add AI response message with tools used
+      addMessage(conversationId, {
+        role: 'assistant',
+        content: response.response.content,
+        timestamp: response.response.timestamp,
+        toolsUsed: response.response.toolsUsed || []
+      })
 
-        sseClient.connect(conversationId, {
-          onOpen: () => {
-            console.log('[Chat Store] Stream connected')
-          },
-          onMessage: (chunk) => {
-            appendStreamChunk(chunk)
-          },
-          onComplete: () => {
-            completeStream(conversationId)
-          },
-          onError: (err) => {
-            console.error('[Chat Store] Stream error:', err)
-            setError(err.message || 'Stream connection failed')
-            sseClient.disconnect(conversationId)
-          }
-        })
-      } else {
-        throw new Error('Unexpected response format from server')
-      }
+      isLoading.value = false
     } catch (err) {
       console.error('[Chat Store] Send message error:', err)
       setError(err.response?.data?.error || err.message || 'Failed to send message')
@@ -412,9 +389,6 @@ export const useChatStore = defineStore('chat', () => {
 
   async function removeConversation(conversationId) {
     try {
-      // Disconnect SSE if connected
-      sseClient.disconnect(conversationId)
-
       // Delete from backend
       await chatApi.deleteConversation(conversationId)
 
@@ -427,8 +401,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function cleanup() {
-    // Disconnect all SSE connections
-    sseClient.disconnectAll()
+    // Cleanup function - reserved for future use
   }
 
   return {

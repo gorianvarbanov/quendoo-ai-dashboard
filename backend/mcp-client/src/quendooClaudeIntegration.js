@@ -189,8 +189,9 @@ export class QuendooClaudeIntegration {
 
   /**
    * Process a chat message with Claude using remote MCP server
+   * @param {Function} onToolProgress - Optional callback for tool execution progress
    */
-  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null) {
+  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null, onToolProgress = null) {
     // Store the Quendoo API key for this request
     this.currentQuendooApiKey = quendooApiKey;
 
@@ -212,6 +213,10 @@ export class QuendooClaudeIntegration {
     try {
       console.log(`[Quendoo Claude] Processing message with Quendoo MCP tools`);
 
+      // Detect task complexity
+      const complexity = this.detectTaskComplexity(message);
+      console.log(`[Quendoo] Task complexity: ${complexity}`);
+
       // Convert MCP tools to Claude format
       const claudeTools = this.availableTools.map(tool => ({
         name: tool.name,
@@ -219,20 +224,29 @@ export class QuendooClaudeIntegration {
         input_schema: tool.inputSchema || { type: 'object', properties: {} }
       }));
 
-      // Call Claude with tools
-      const response = await this.anthropic.messages.create({
+      // Build request parameters
+      const requestParams = {
         model: model,
         max_tokens: 4096,
         system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations. You have access to tools for checking availability, managing bookings, and other business operations. Use these tools when users ask about scheduling, appointments, or business data.',
         messages: history,
         tools: claudeTools
-      });
+      };
+
+      // For simple tasks, force immediate tool use
+      if (complexity === 'simple' && claudeTools.length > 0) {
+        requestParams.tool_choice = { type: "any" };
+        console.log('[Quendoo] Simple task: forcing tool_choice = any');
+      }
+
+      // Call Claude with tools
+      const response = await this.anthropic.messages.create(requestParams);
 
       console.log(`[Quendoo Claude] Response received, stop_reason: ${response.stop_reason}`);
 
       // Handle tool use
       if (response.stop_reason === 'tool_use') {
-        return await this.handleToolUse(response, conversationId, systemPrompt, model);
+        return await this.handleToolUse(response, conversationId, systemPrompt, model, onToolProgress);
       }
 
       // Extract content from response
@@ -272,9 +286,38 @@ export class QuendooClaudeIntegration {
   }
 
   /**
-   * Handle tool use from Claude
+   * Detect task complexity based on user message
+   * Returns: 'simple' or 'complex'
    */
-  async handleToolUse(response, conversationId, systemPrompt = null, model = 'claude-3-5-haiku-20241022') {
+  detectTaskComplexity(message) {
+    // Complex task indicators
+    const complexIndicators = [
+      /изпрати.*и.*изпрати/i, // "send ... and send" (multiple emails)
+      /изпрати.*и.*обади/i,    // "send ... and call"
+      /намери.*и.*изпрати.*и/i, // "find ... and send ... and"
+      /(\d+)\s*(email|имейл|мейл)/i, // Multiple emails mentioned
+      /отчет/i,                 // "report" (usually needs extra step)
+      /и.*и/,                   // Multiple "and" conjunctions
+    ];
+
+    // Check for complex indicators
+    for (const pattern of complexIndicators) {
+      if (pattern.test(message)) {
+        console.log('[Quendoo] Complex task detected:', message.substring(0, 100));
+        return 'complex';
+      }
+    }
+
+    // Simple task (default)
+    console.log('[Quendoo] Simple task detected');
+    return 'simple';
+  }
+
+  /**
+   * Handle tool use from Claude
+   * @param {Function} onToolProgress - Optional callback for tool execution progress: (tool) => void
+   */
+  async handleToolUse(response, conversationId, systemPrompt = null, model = 'claude-3-5-haiku-20241022', onToolProgress = null) {
     const history = this.conversationHistories.get(conversationId);
 
     // Add Claude's tool use to history
@@ -312,12 +355,18 @@ export class QuendooClaudeIntegration {
           }
 
           // Track tool usage
-          toolsUsedInfo.push({
+          const toolInfo = {
             name: block.name,
             params: block.input,
             duration: duration,
             success: true
-          });
+          };
+          toolsUsedInfo.push(toolInfo);
+
+          // Emit progress event if callback provided
+          if (onToolProgress) {
+            onToolProgress(toolInfo);
+          }
 
           toolResults.push({
             type: 'tool_result',
@@ -330,13 +379,19 @@ export class QuendooClaudeIntegration {
           const duration = Date.now() - startTime;
 
           // Track failed tool usage
-          toolsUsedInfo.push({
+          const toolInfo = {
             name: block.name,
             params: block.input,
             duration: duration,
             success: false,
             error: error.message
-          });
+          };
+          toolsUsedInfo.push(toolInfo);
+
+          // Emit progress event if callback provided
+          if (onToolProgress) {
+            onToolProgress(toolInfo);
+          }
 
           toolResults.push({
             type: 'tool_result',
@@ -364,9 +419,11 @@ export class QuendooClaudeIntegration {
       console.log(`[Quendoo] Multi-tool loop iteration ${loopCount}`);
 
       // Get Claude's response
-      finalResponse = await this.anthropic.messages.create({
+      // On first iteration, force Claude to use tools (tool_choice: "any")
+      // On subsequent iterations, let Claude decide (tool_choice: "auto")
+      const requestParams = {
         model: model,
-        max_tokens: 4096,
+        max_tokens: 8192, // Increased from 4096 to prevent premature stopping
         system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
         messages: history,
         tools: this.availableTools.map(tool => ({
@@ -374,11 +431,29 @@ export class QuendooClaudeIntegration {
           description: tool.description || '',
           input_schema: tool.inputSchema || { type: 'object', properties: {} }
         }))
-      });
+      };
 
-      // Log response details
-      console.log(`[Quendoo] Claude stop_reason: ${finalResponse.stop_reason}`);
-      console.log(`[Quendoo] Claude response content blocks:`, finalResponse.content.map(b => ({ type: b.type, ...(b.type === 'tool_use' ? { name: b.name } : {}) })));
+      // Force tool use on first iteration to prevent hesitation
+      if (loopCount === 1 && this.availableTools.length > 0) {
+        requestParams.tool_choice = { type: "any" };
+        console.log('[Quendoo] First iteration: forcing tool_choice = any');
+      } else {
+        requestParams.tool_choice = { type: "auto" };
+        console.log(`[Quendoo] Iteration ${loopCount}: using tool_choice = auto`);
+      }
+
+      finalResponse = await this.anthropic.messages.create(requestParams);
+
+      // Enhanced logging for debugging
+      console.log(`[Quendoo] ========== Loop iteration ${loopCount}/${maxLoops} ==========`);
+      console.log(`[Quendoo] stop_reason: ${finalResponse.stop_reason}`);
+      console.log(`[Quendoo] Content blocks:`, JSON.stringify(finalResponse.content.map(b => ({
+        type: b.type,
+        ...(b.type === 'tool_use' ? { tool_name: b.name, tool_id: b.id } : {}),
+        ...(b.type === 'text' ? { text_preview: b.text.substring(0, 100) + '...' } : {})
+      })), null, 2));
+      console.log(`[Quendoo] History length: ${history.length} messages`);
+      console.log(`[Quendoo] Tools executed so far: ${toolsUsedInfo.length}`);
 
       // Add response to history
       history.push({
@@ -414,12 +489,18 @@ export class QuendooClaudeIntegration {
               }
 
               // Track additional tool usage
-              toolsUsedInfo.push({
+              const toolInfo = {
                 name: block.name,
                 params: block.input,
                 duration: duration,
                 success: true
-              });
+              };
+              toolsUsedInfo.push(toolInfo);
+
+              // Emit progress event if callback provided
+              if (onToolProgress) {
+                onToolProgress(toolInfo);
+              }
 
               additionalToolResults.push({
                 type: 'tool_result',
@@ -431,13 +512,19 @@ export class QuendooClaudeIntegration {
 
               const duration = Date.now() - startTime;
 
-              toolsUsedInfo.push({
+              const toolInfo = {
                 name: block.name,
                 params: block.input,
                 duration: duration,
                 success: false,
                 error: error.message
-              });
+              };
+              toolsUsedInfo.push(toolInfo);
+
+              // Emit progress event if callback provided
+              if (onToolProgress) {
+                onToolProgress(toolInfo);
+              }
 
               additionalToolResults.push({
                 type: 'tool_result',
@@ -457,6 +544,31 @@ export class QuendooClaudeIntegration {
 
         // Continue the loop
         continue;
+      }
+
+      // Check if Claude stopped but hasn't completed all expected tasks
+      if (finalResponse.stop_reason === 'end_turn') {
+        // Check if there's text content indicating unfinished work
+        const hasTextContent = finalResponse.content.some(b => b.type === 'text');
+
+        console.log(`[Quendoo] Claude stopped with end_turn, tools executed: ${toolsUsedInfo.length}`);
+
+        // If Claude wrote text but we expected more tools, try to continue
+        if (hasTextContent && loopCount < maxLoops) {
+          console.log('[Quendoo] Attempting to continue execution...');
+
+          // Add continuation prompt
+          history.push({
+            role: 'user',
+            content: [{
+              type: 'text',
+              text: 'Continue with the remaining tasks. Call all necessary tools to complete the request.'
+            }]
+          });
+
+          // Continue loop
+          continue;
+        }
       }
 
       // No more tools requested, break the loop

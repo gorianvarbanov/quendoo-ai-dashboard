@@ -745,7 +745,7 @@ app.post('/chat/quendoo', async (req, res) => {
       console.log(`[Chat/Quendoo] Reusing existing MCP session for conversation: ${finalConversationId}`);
     }
 
-    // Pass user's Quendoo API key to the integration
+    // Process message with Claude integration
     const result = await quendooIntegration.processMessage(
       message,
       finalConversationId,
