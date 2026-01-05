@@ -293,10 +293,15 @@ app.get('/conversations', async (req, res) => {
  */
 app.get('/conversations/all', requireAuth, async (req, res) => {
   try {
+    console.log('[Conversations /all] Request received');
+    console.log('[Conversations /all] Authorization header:', req.headers.authorization ? 'Present' : 'Missing');
+    console.log('[Conversations /all] User:', req.user);
+
     const limit = parseInt(req.query.limit) || 100;
 
     // Get ALL conversations across all hotels
     const conversations = await conversationService.getAllConversations(limit);
+    console.log(`[Conversations /all] Returning ${conversations.length} conversations`);
     res.json({ conversations });
   } catch (error) {
     console.error('[Conversations] Error fetching all conversations:', error);

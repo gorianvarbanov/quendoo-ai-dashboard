@@ -16,6 +16,16 @@ const apiClient = axios.create({
 // NOTE: API key is now managed server-side for security
 apiClient.interceptors.request.use(
   (config) => {
+    // Add JWT token from localStorage if available (for admin routes)
+    try {
+      const adminToken = localStorage.getItem('quendoo-admin-token')
+      if (adminToken) {
+        config.headers['Authorization'] = `Bearer ${adminToken}`
+      }
+    } catch (error) {
+      console.warn('[API] Failed to load admin token:', error)
+    }
+
     // Add MCP Server URL from localStorage if available
     try {
       const settings = localStorage.getItem('quendoo-settings')

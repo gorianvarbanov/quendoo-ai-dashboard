@@ -30,17 +30,17 @@ QUENDOO_TOOLS = [
     },
     {
         "name": "get_rooms_details",
-        "description": "Get detailed information for rooms. Optionally filter by room_id and language.",
+        "description": "Get detailed information about room TYPES (not availability). Returns room type properties: room name, room ID, room size (sq meters), bed configurations, maximum occupancy, amenities, and descriptions. Use this tool when you need to describe what types of rooms the hotel has. DO NOT use for checking availability or booking - use get_availability or get_booking_offers instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "api_lng": {
                     "type": "string",
-                    "description": "Language code for room details. Optional."
+                    "description": "Language code for room details (e.g., 'en', 'bg'). Optional."
                 },
                 "room_id": {
                     "type": "integer",
-                    "description": "Specific room ID to get details for. Optional (returns all rooms if omitted)."
+                    "description": "Specific room type ID to get details for. Optional (returns all room types if omitted)."
                 }
             }
         }
@@ -94,17 +94,38 @@ QUENDOO_TOOLS = [
     },
     {
         "name": "get_booking_offers",
-        "description": "Fetch booking offers for a booking module code and stay dates.",
+        "description": "Fetch booking offers for a booking module code and stay dates. ALWAYS ask the user for check-in date, number of nights, and number of guests if not explicitly provided in their message.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "date_from": {
                     "type": "string",
-                    "description": "Check-in date in YYYY-MM-DD format"
+                    "description": "Check-in date in YYYY-MM-DD format. MUST ask user if not provided."
                 },
                 "nights": {
                     "type": "integer",
-                    "description": "Number of nights"
+                    "description": "Number of nights for the stay. MUST ask user if not provided."
+                },
+                "guests": {
+                    "type": "array",
+                    "description": "List of guest objects with format [{\"adults\": 2, \"children_by_ages\": [5, 8]}]. REQUIRED - ask user 'How many adults and children?' if not provided.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "adults": {
+                                "type": "integer",
+                                "description": "Number of adults in this room"
+                            },
+                            "children_by_ages": {
+                                "type": "array",
+                                "description": "Ages of children (empty array if no children)",
+                                "items": {
+                                    "type": "integer"
+                                }
+                            }
+                        },
+                        "required": ["adults", "children_by_ages"]
+                    }
                 },
                 "bm_code": {
                     "type": "string",
@@ -114,16 +135,12 @@ QUENDOO_TOOLS = [
                     "type": "string",
                     "description": "Language code. Optional."
                 },
-                "guests": {
-                    "type": "array",
-                    "description": "List of guest objects with format [{\"adults\": 2, \"children_by_ages\": [5, 8]}]. Optional."
-                },
                 "currency": {
                     "type": "string",
                     "description": "Currency code (e.g., 'BGN', 'EUR', 'USD'). Optional."
                 }
             },
-            "required": ["date_from", "nights"]
+            "required": ["date_from", "nights", "guests"]
         }
     },
     {

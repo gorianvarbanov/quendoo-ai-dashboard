@@ -130,18 +130,34 @@ class QuendooAPIClient:
         currency: Optional[str] = None
     ) -> Dict[str, Any]:
         """Get booking offers"""
+        # Auto-detect booking module if not provided
+        if not bm_code:
+            settings = await self.get_property_settings(names="booking_modules")
+            booking_modules = settings.get("data", {}).get("booking_modules", [])
+            active_modules = [m for m in booking_modules if m.get("is_active")]
+            if not active_modules:
+                return {"error": "No active booking modules found. Please configure booking modules in Quendoo."}
+            bm_code = active_modules[0]["code"]
+
         params = {
+            "bm_code": bm_code,
             "date_from": date_from,
             "nights": nights
         }
-        if bm_code:
-            params["bm_code"] = bm_code
+
         if api_lng:
             params["api_lng"] = api_lng
-        if guests:
-            params["guests"] = guests
         if currency:
             params["currency"] = currency
+
+        # Format guests as query params: guests[0][adults]=2&guests[0][children_by_ages][0]=5
+        if guests:
+            for room_idx, guest_room in enumerate(guests):
+                if "adults" in guest_room:
+                    params[f"guests[{room_idx}][adults]"] = guest_room["adults"]
+                if "children_by_ages" in guest_room and guest_room["children_by_ages"]:
+                    for child_idx, age in enumerate(guest_room["children_by_ages"]):
+                        params[f"guests[{room_idx}][children_by_ages][{child_idx}]"] = age
 
         return await self.get("/Property/getBookingOffers", params=params)
 

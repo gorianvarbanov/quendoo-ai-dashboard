@@ -387,7 +387,8 @@ export class QuendooClaudeIntegration {
 
     return {
       content,
-      toolsUsed: toolsUsedInfo
+      // Don't show tools used if response was filtered (out of scope)
+      toolsUsed: filterResult.filtered ? false : toolsUsedInfo
     };
   }
 

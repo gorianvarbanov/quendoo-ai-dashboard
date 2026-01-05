@@ -22,7 +22,75 @@
         <span class="message-timestamp">{{ formattedTime }}</span>
       </div>
 
-      <div class="message-content">
+      <!-- Room Cards (Airbnb-style) -->
+      <div v-if="hasRoomImages && !isUser && !isStreaming" class="room-cards-container">
+        <div v-for="(room, roomIndex) in roomCards" :key="roomIndex" class="room-card">
+          <!-- Room Gallery Grid -->
+          <div
+            class="room-gallery-grid"
+            :class="{
+              'single-image': room.images.length === 1,
+              'two-images': room.images.length === 2,
+              'multi-images': room.images.length >= 3
+            }"
+            @click="openRoomGallery"
+          >
+            <!-- Single image layout -->
+            <div v-if="room.images.length === 1" class="room-gallery-item room-gallery-single">
+              <img :src="room.images[0]" :alt="room.name" />
+            </div>
+
+            <!-- Two images layout -->
+            <template v-else-if="room.images.length === 2">
+              <div class="room-gallery-item room-gallery-half">
+                <img :src="room.images[0]" :alt="room.name" />
+              </div>
+              <div class="room-gallery-item room-gallery-half">
+                <img :src="room.images[1]" :alt="room.name" />
+              </div>
+            </template>
+
+            <!-- Three or more images layout -->
+            <template v-else>
+              <!-- First image (larger) -->
+              <div v-if="room.images[0]" class="room-gallery-item room-gallery-main">
+                <img :src="room.images[0]" :alt="room.name" />
+              </div>
+
+              <!-- Additional images (smaller, stacked on right) -->
+              <div class="room-gallery-side">
+                <div v-if="room.images[1]" class="room-gallery-item room-gallery-small">
+                  <img :src="room.images[1]" :alt="room.name" />
+                </div>
+                <div v-if="room.images[2]" class="room-gallery-item room-gallery-small room-gallery-more">
+                  <img :src="room.images[2]" :alt="room.name" />
+                  <div v-if="room.images.length > 3" class="room-gallery-overlay">
+                    <v-icon size="24" color="white">mdi-image-multiple</v-icon>
+                    <span class="room-overlay-text">+{{ room.images.length - 3 }}</span>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- Room Info -->
+          <div class="room-info">
+            <h3 class="room-name">{{ room.name }}</h3>
+            <p v-if="room.description" class="room-description">{{ room.description }}</p>
+            <ul v-if="room.details.length > 0" class="room-details">
+              <li v-for="(detail, detailIndex) in room.details.slice(0, 3)" :key="detailIndex">
+                {{ detail }}
+              </li>
+              <li v-if="room.details.length > 3" class="room-more-details">
+                +{{ room.details.length - 3 }} more details
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Message content (hidden when room cards are shown) -->
+      <div v-if="!hasRoomImages || isUser" class="message-content">
         <span v-html="formattedContent"></span>
         <span v-if="isTyping" class="typing-cursor">|</span>
       </div>
@@ -94,6 +162,13 @@
       v-model="tableViewerOpen"
       :table-data="parsedTableData"
     />
+
+    <!-- Room Gallery Component -->
+    <RoomGallery
+      v-model="roomGalleryOpen"
+      :title="'Room Photos'"
+      :images="roomImages"
+    />
   </div>
 </template>
 
@@ -102,6 +177,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { format } from 'date-fns'
 import { marked } from 'marked'
 import TableViewer from '@/components/common/TableViewer.vue'
+import RoomGallery from '@/components/chat/RoomGallery.vue'
 
 // Configure marked for better rendering
 marked.setOptions({
@@ -231,6 +307,118 @@ const hasTable = computed(() => {
   return tablePattern.test(props.message.content)
 })
 
+// Room gallery state
+const roomGalleryOpen = ref(false)
+
+// Detect and extract room data (grouped by room)
+const roomCards = computed(() => {
+  if (!props.message.content) return []
+
+  const content = props.message.content
+  const lines = content.split('\n')
+  const rooms = []
+
+  // Pattern to match booking.quendoo.com image URLs
+  const imageUrlPattern = /https:\/\/booking\.quendoo\.com\/files\/[^\s)]+\.(jpg|jpeg|png|gif|webp)/gi
+
+  let currentRoom = null
+  let inRoomSection = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim()
+
+    // Detect numbered room headers (e.g., "1. Единична стая", "2. Двойна стая")
+    const numberedMatch = line.match(/^(\d+)\.\s+(.+)$/)
+
+    // Detect bold text headers (e.g., "**Room Name**")
+    const boldMatch = line.match(/^\*\*([^*]+)\*\*/)
+
+    // Detect markdown headers (e.g., "## Room Name")
+    const headerMatch = line.match(/^#{1,3}\s+(.+)$/)
+
+    // Check if this is a room header
+    if (numberedMatch || boldMatch || headerMatch) {
+      let name = ''
+
+      if (numberedMatch) {
+        name = numberedMatch[2].trim()
+      } else if (boldMatch) {
+        name = boldMatch[1].trim()
+      } else if (headerMatch) {
+        name = headerMatch[1].trim()
+      }
+
+      // Skip generic section headers
+      if (!name.match(/^(Room Types?|Available Rooms?|Налични|типове стаи|стаи)$/i)) {
+        // Save previous room if exists and has images
+        if (currentRoom && currentRoom.images.length > 0) {
+          rooms.push(currentRoom)
+        }
+
+        // Start new room
+        inRoomSection = true
+        currentRoom = {
+          name: name,
+          images: [],
+          description: '',
+          details: []
+        }
+      }
+    }
+
+    // Extract image URLs from current line
+    const urlsInLine = line.match(imageUrlPattern) || []
+    if (urlsInLine.length > 0 && currentRoom) {
+      urlsInLine.forEach(url => {
+        currentRoom.images.push(url)
+      })
+    }
+
+    // Extract details (lines starting with ○, -, •, or *)
+    if (currentRoom && line.match(/^[○\-•*]\s+(.+)$/)) {
+      const detail = line.replace(/^[○\-•*]\s+/, '').trim()
+      // Remove ":" and everything after it for cleaner details
+      let cleanDetail = detail.split(':')[0].trim()
+      // Remove markdown bold syntax (**text**)
+      cleanDetail = cleanDetail.replace(/\*\*(.+?)\*\*/g, '$1')
+      if (!cleanDetail.includes('http') && cleanDetail.length > 0) {
+        currentRoom.details.push(cleanDetail)
+      }
+    }
+
+    // Extract description (plain text after room name, before bullets)
+    if (currentRoom && !line.match(/^[\d\-•*#○]/) && line.length > 0 && !line.includes('http') && !boldMatch && !headerMatch && !numberedMatch) {
+      if (currentRoom.description.length === 0) {
+        currentRoom.description = line
+      }
+    }
+  }
+
+  // Save last room
+  if (currentRoom && currentRoom.images.length > 0) {
+    rooms.push(currentRoom)
+  }
+
+  return rooms
+})
+
+const hasRoomImages = computed(() => roomCards.value.length > 0)
+
+// Flatten all images for carousel
+const roomImages = computed(() => {
+  const allImages = []
+  roomCards.value.forEach(room => {
+    room.images.forEach(url => {
+      allImages.push({
+        url,
+        roomName: room.name,
+        description: room.description
+      })
+    })
+  })
+  return allImages
+})
+
 // Parse markdown table into structured data (use full content, not displayed)
 const parsedTableData = computed(() => {
   if (!hasTable.value) return { headers: [], rows: [] }
@@ -264,6 +452,11 @@ function openTableViewer() {
   console.log('[ChatMessage] Opening table viewer with data:', parsedTableData.value)
 }
 
+function openRoomGallery() {
+  roomGalleryOpen.value = true
+  console.log('[ChatMessage] Opening room gallery with images:', roomImages.value)
+}
+
 // Copy message content to clipboard
 async function copyMessage() {
   try {
@@ -292,7 +485,16 @@ async function copyMessage() {
 // Format content with Markdown support
 const formattedContent = computed(() => {
   // Use displayedContent for typewriter effect
-  const contentToFormat = displayedContent.value || props.message.content || ''
+  let contentToFormat = displayedContent.value || props.message.content || ''
+
+  if (!contentToFormat) return ''
+
+  // Remove booking.quendoo.com image URLs from text (they're shown in room cards)
+  const imageUrlPattern = /https:\/\/booking\.quendoo\.com\/files\/[^\s)]+\.(jpg|jpeg|png|gif|webp)/gi
+  contentToFormat = contentToFormat.replace(imageUrlPattern, '').trim()
+
+  // Remove empty lines left after URL removal
+  contentToFormat = contentToFormat.replace(/\n\s*\n\s*\n/g, '\n\n')
 
   if (!contentToFormat) return ''
 
@@ -575,6 +777,182 @@ const formattedContent = computed(() => {
 .table-viewer-button {
   margin-top: 12px;
   margin-bottom: 4px;
+}
+
+/* Airbnb-style Room Cards */
+.room-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 20px;
+  max-width: 100%;
+}
+
+.room-card {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: box-shadow 0.3s, transform 0.2s;
+  background: rgb(var(--v-theme-surface));
+}
+
+.room-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Room Gallery Grid */
+.room-gallery-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 4px;
+  cursor: pointer;
+  position: relative;
+  height: 200px;
+}
+
+/* Single image layout */
+.room-gallery-grid.single-image {
+  display: block;
+  height: 220px;
+  grid-template-columns: unset;
+}
+
+.room-gallery-single {
+  width: 100%;
+  height: 100%;
+}
+
+.room-gallery-single img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Two images layout */
+.room-gallery-grid.two-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  height: 220px;
+}
+
+.room-gallery-half {
+  width: 100%;
+  height: 100%;
+}
+
+.room-gallery-half img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-gallery-side {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.room-gallery-item {
+  position: relative;
+  overflow: hidden;
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.room-gallery-main {
+  height: 100%;
+}
+
+.room-gallery-small {
+  height: 50%;
+}
+
+.room-gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.4s ease;
+}
+
+.room-gallery-grid:hover .room-gallery-item img {
+  transform: scale(1.08);
+}
+
+.room-gallery-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  backdrop-filter: blur(3px);
+}
+
+.room-overlay-text {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-top: 4px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* Room Info Section */
+.room-info {
+  padding: 12px 16px;
+  text-align: center;
+}
+
+.room-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 6px 0;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.room-description {
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+
+.room-details {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.room-details li {
+  font-size: 0.85rem;
+  color: rgba(var(--v-theme-on-surface), 0.8);
+  padding-left: 0;
+  position: relative;
+}
+
+.room-details li::before {
+  content: "";
+  display: none;
+}
+
+.room-more-details {
+  color: rgb(var(--v-theme-primary));
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.room-more-details::before {
+  content: "";
+  display: none;
 }
 
 .message-actions {
