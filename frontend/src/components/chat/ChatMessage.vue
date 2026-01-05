@@ -95,32 +95,72 @@
         <span v-if="isTyping" class="typing-cursor">|</span>
       </div>
 
-      <!-- Tools Used Panel (shown for AI messages that used tools) -->
-      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming" class="tools-panel">
-        <div class="tools-list">
-          <v-chip
+      <!-- Tool Execution Loading (shown while streaming) -->
+      <div v-if="!isUser && isStreaming && props.message.content && props.message.content.includes('tool')" class="tools-loading">
+        <div class="loading-header">
+          <v-icon size="16" color="primary" class="loading-icon">mdi-cog</v-icon>
+          <span class="loading-title">Executing tools...</span>
+          <v-progress-circular
+            indeterminate
+            size="16"
+            width="2"
+            color="primary"
+            class="loading-spinner"
+          ></v-progress-circular>
+        </div>
+        <div class="loading-skeleton">
+          <div class="skeleton-step">
+            <div class="skeleton-badge shimmer"></div>
+            <div class="skeleton-content">
+              <div class="skeleton-line shimmer"></div>
+              <div class="skeleton-line-short shimmer"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tools Used Timeline (shown for AI messages that used tools) -->
+      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming" class="tools-timeline-compact">
+        <div class="timeline-compact-items">
+          <div
             v-for="(tool, index) in toolsUsed"
             :key="index"
-            size="small"
-            variant="tonal"
-            color="primary"
-            class="tool-chip"
+            class="timeline-compact-item"
+            :style="{ animationDelay: `${index * 0.1}s` }"
           >
-            <v-icon start size="14">mdi-{{ getToolIcon(tool.name) }}</v-icon>
-            {{ tool.name }}
-            <v-tooltip activator="parent" location="top">
-              <div class="tool-tooltip">
-                <div class="tool-tooltip-name">{{ tool.name }}</div>
-                <div v-if="tool.duration" class="tool-tooltip-duration">
-                  Duration: {{ tool.duration }}ms
-                </div>
-                <div v-if="tool.params" class="tool-tooltip-params">
-                  <strong>Parameters:</strong>
+            <!-- Step number -->
+            <span class="timeline-compact-number">{{ index + 1 }}</span>
+
+            <!-- Tool icon -->
+            <v-icon size="14" :color="getToolColor(tool.name)" class="timeline-compact-icon">
+              mdi-{{ getToolIcon(tool.name) }}
+            </v-icon>
+
+            <!-- Tool name -->
+            <span class="timeline-compact-name">{{ tool.name }}</span>
+
+            <!-- Duration -->
+            <span v-if="tool.duration" class="timeline-compact-duration">{{ tool.duration }}ms</span>
+
+            <!-- Expandable params -->
+            <v-menu v-if="tool.params" location="bottom" :close-on-content-click="false">
+              <template v-slot:activator="{ props }">
+                <v-icon
+                  v-bind="props"
+                  size="14"
+                  class="timeline-compact-expand"
+                  color="grey"
+                >
+                  mdi-chevron-down
+                </v-icon>
+              </template>
+              <v-card class="timeline-params-card" max-width="500">
+                <v-card-text class="timeline-params-content">
                   <pre>{{ JSON.stringify(tool.params, null, 2) }}</pre>
-                </div>
-              </div>
-            </v-tooltip>
-          </v-chip>
+                </v-card-text>
+              </v-card>
+            </v-menu>
+          </div>
         </div>
       </div>
 
@@ -226,10 +266,31 @@ function getToolIcon(toolName) {
     'get_booking_offers': 'tag-multiple',
     'make_call': 'phone',
     'send_quendoo_email': 'email',
+    'ack_booking': 'check-circle',
+    'post_room_assignment': 'door-open',
     'default': 'wrench'
   }
 
   return iconMap[toolName] || iconMap.default
+}
+
+// Get color for each tool type
+function getToolColor(toolName) {
+  const colorMap = {
+    'get_availability': 'blue',
+    'update_availability': 'indigo',
+    'get_property_settings': 'grey',
+    'get_rooms_details': 'purple',
+    'get_bookings': 'teal',
+    'get_booking_offers': 'orange',
+    'make_call': 'green',
+    'send_quendoo_email': 'red',
+    'ack_booking': 'success',
+    'post_room_assignment': 'cyan',
+    'default': 'primary'
+  }
+
+  return colorMap[toolName] || colorMap.default
 }
 
 // Typewriter effect for AI messages
@@ -705,73 +766,364 @@ const formattedContent = computed(() => {
   }
 }
 
-/* Tools Panel */
-.tools-panel {
-  margin-top: 12px;
-  padding: 10px 12px;
-  background: rgba(var(--v-theme-primary), 0.04);
-  border-left: 3px solid rgb(var(--v-theme-primary));
-  border-radius: 6px;
+/* Tool Execution Loading Skeleton */
+.tools-loading {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: rgba(var(--v-theme-primary), 0.03);
+  border: 1px solid rgba(var(--v-theme-primary), 0.15);
+  border-radius: 8px;
 }
 
-.tools-header {
+.loading-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.tools-title {
-  font-size: 0.75rem;
+.loading-icon {
+  animation: rotate 2s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.loading-title {
+  font-size: 0.8rem;
   font-weight: 600;
-  color: rgb(var(--v-theme-primary));
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: rgb(var(--v-theme-on-surface));
 }
 
-.tools-list {
+.loading-spinner {
+  margin-left: auto;
+}
+
+.loading-skeleton {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.tool-chip {
+.skeleton-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.skeleton-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(var(--v-theme-primary), 0.15);
+  flex-shrink: 0;
+}
+
+.skeleton-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 12px;
+  background: rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 6px;
+  width: 60%;
+}
+
+.skeleton-line-short {
+  height: 10px;
+  background: rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 5px;
+  width: 40%;
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(var(--v-theme-on-surface), 0.08) 0%,
+    rgba(var(--v-theme-on-surface), 0.15) 50%,
+    rgba(var(--v-theme-on-surface), 0.08) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Compact Tools Timeline */
+.tools-timeline-compact {
+  margin-top: 10px;
+  margin-bottom: 4px;
+}
+
+.timeline-compact-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.timeline-compact-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(var(--v-theme-primary), 0.03);
+  border-radius: 6px;
+  opacity: 0;
+  animation: fadeInItem 0.3s ease forwards;
+  transition: background 0.2s;
+}
+
+.timeline-compact-item:hover {
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+
+@keyframes fadeInItem {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.timeline-compact-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-primary));
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.timeline-compact-icon {
+  flex-shrink: 0;
+}
+
+.timeline-compact-name {
   font-size: 0.75rem;
   font-weight: 500;
+  color: rgb(var(--v-theme-on-surface));
+  flex: 1;
+}
+
+.timeline-compact-duration {
+  font-size: 0.65rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  background: rgba(var(--v-theme-on-surface), 0.05);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.timeline-compact-expand {
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.timeline-compact-expand:hover {
+  opacity: 1;
+}
+
+.timeline-params-card {
+  max-height: 400px;
+  overflow: auto;
+}
+
+.timeline-params-content {
+  padding: 12px;
+}
+
+.timeline-params-content pre {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.7rem;
+  color: rgb(var(--v-theme-on-surface));
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Old timeline styles (kept for backwards compatibility) */
+.tools-timeline {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: rgba(var(--v-theme-primary), 0.03);
+  border: 1px solid rgba(var(--v-theme-primary), 0.15);
+  border-radius: 8px;
+}
+
+.timeline-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.timeline-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+  letter-spacing: 0.3px;
+}
+
+.timeline-count {
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  margin-left: auto;
+  background: rgba(var(--v-theme-primary), 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.timeline-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.timeline-step {
+  display: flex;
+  gap: 12px;
+  position: relative;
+  opacity: 0;
+  animation: slideInStep 0.4s ease forwards;
+}
+
+@keyframes slideInStep {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.timeline-step-multi {
+  padding-bottom: 16px;
+}
+
+.timeline-badge {
+  position: relative;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.timeline-badge-inner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgb(var(--v-theme-primary));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(var(--v-theme-primary), 0.3);
+}
+
+.timeline-connector {
+  position: absolute;
+  left: 13px;
+  top: 28px;
+  width: 2px;
+  height: calc(100% + 16px);
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--v-theme-primary), 0.4),
+    rgba(var(--v-theme-primary), 0.15)
+  );
+  z-index: 1;
+}
+
+.timeline-content {
+  flex: 1;
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.1);
+  border-radius: 8px;
+  padding: 10px 12px;
+  transition: all 0.2s;
+}
+
+.timeline-content:hover {
+  border-color: rgba(var(--v-theme-primary), 0.3);
+  box-shadow: 0 2px 8px rgba(var(--v-theme-primary), 0.08);
+}
+
+.timeline-step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.timeline-step-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.timeline-step-duration {
+  margin-left: auto;
+  font-size: 0.7rem;
+  color: rgba(var(--v-theme-on-surface), 0.5);
+  background: rgba(var(--v-theme-on-surface), 0.05);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.timeline-step-params {
+  margin-top: 8px;
+}
+
+.timeline-params-btn {
+  font-size: 0.65rem;
+  height: 20px;
+  padding: 0 8px;
+  text-transform: none;
+  letter-spacing: 0;
 }
 
 /* Tool Tooltip */
-.tool-tooltip {
-  padding: 8px;
-  max-width: 300px;
-}
-
-.tool-tooltip-name {
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: rgb(var(--v-theme-primary));
-}
-
-.tool-tooltip-duration {
-  font-size: 0.75rem;
-  margin-bottom: 6px;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-}
-
 .tool-tooltip-params {
   font-size: 0.7rem;
-  margin-top: 6px;
 }
 
 .tool-tooltip-params pre {
   background: rgba(var(--v-theme-on-surface), 0.05);
-  padding: 6px;
+  padding: 8px;
   border-radius: 4px;
   margin-top: 4px;
   overflow-x: auto;
   font-family: 'Courier New', monospace;
   font-size: 0.65rem;
   max-height: 200px;
+  color: rgb(var(--v-theme-on-surface));
 }
 
 .table-viewer-button {

@@ -352,19 +352,115 @@ export class QuendooClaudeIntegration {
       content: toolResults
     });
 
-    // Get Claude's final response
-    const finalResponse = await this.anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
-      max_tokens: 4096,
-      system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
-      messages: history
-    });
+    // Continue calling Claude until it stops requesting tools (multi-tool execution loop)
+    let finalResponse;
+    let loopCount = 0;
+    const maxLoops = 10; // Prevent infinite loops
 
-    // Add final response to history
-    history.push({
-      role: 'assistant',
-      content: finalResponse.content
-    });
+    while (loopCount < maxLoops) {
+      loopCount++;
+      console.log(`[Quendoo] Multi-tool loop iteration ${loopCount}`);
+
+      // Get Claude's response
+      finalResponse = await this.anthropic.messages.create({
+        model: 'claude-3-5-haiku-20241022',
+        max_tokens: 4096,
+        system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
+        messages: history,
+        tools: this.availableTools.map(tool => ({
+          name: tool.name,
+          description: tool.description || '',
+          input_schema: tool.inputSchema || { type: 'object', properties: {} }
+        }))
+      });
+
+      // Add response to history
+      history.push({
+        role: 'assistant',
+        content: finalResponse.content
+      });
+
+      // Check if Claude wants to use more tools
+      if (finalResponse.stop_reason === 'tool_use') {
+        console.log('[Quendoo] Claude requested more tools, continuing loop...');
+
+        // Execute the additional tools
+        const additionalToolResults = [];
+        for (const block of finalResponse.content) {
+          if (block.type === 'tool_use') {
+            console.log(`[Quendoo] Executing additional tool: ${block.name}`);
+
+            const startTime = Date.now();
+
+            try {
+              const result = await this.sendRequest({
+                method: 'tools/call',
+                params: {
+                  name: block.name,
+                  arguments: block.input
+                }
+              });
+
+              const duration = Date.now() - startTime;
+
+              if (result.error) {
+                throw new Error(result.error.message);
+              }
+
+              // Track additional tool usage
+              toolsUsedInfo.push({
+                name: block.name,
+                params: block.input,
+                duration: duration,
+                success: true
+              });
+
+              additionalToolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: JSON.stringify(result.result)
+              });
+            } catch (error) {
+              console.error(`[Quendoo] Additional tool execution failed:`, error);
+
+              const duration = Date.now() - startTime;
+
+              toolsUsedInfo.push({
+                name: block.name,
+                params: block.input,
+                duration: duration,
+                success: false,
+                error: error.message
+              });
+
+              additionalToolResults.push({
+                type: 'tool_result',
+                tool_use_id: block.id,
+                content: JSON.stringify({ error: error.message }),
+                is_error: true
+              });
+            }
+          }
+        }
+
+        // Add additional tool results to history
+        history.push({
+          role: 'user',
+          content: additionalToolResults
+        });
+
+        // Continue the loop
+        continue;
+      }
+
+      // No more tools requested, break the loop
+      console.log(`[Quendoo] Multi-tool execution complete after ${loopCount} iteration(s)`);
+      break;
+    }
+
+    if (loopCount >= maxLoops) {
+      console.warn('[Quendoo] Multi-tool loop reached maximum iterations');
+    }
 
     // Keep history manageable
     if (history.length > 20) {
