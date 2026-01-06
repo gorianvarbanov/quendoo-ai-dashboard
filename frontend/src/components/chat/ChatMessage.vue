@@ -580,23 +580,53 @@ const hasAvailability = computed(() => {
 const availabilityData = computed(() => {
   if (!hasAvailability.value) return null
   const availabilityTool = toolsUsed.value.find(tool => tool.name === 'get_availability' && tool.result)
-  return availabilityTool ? availabilityTool.result : null
+  if (!availabilityTool) return null
+
+  // MCP protocol wraps result in { result: {...} }, so check both formats
+  return availabilityTool.result.result || availabilityTool.result
 })
 
 // Detect if get_bookings tool was used and has result data
 const hasBookings = computed(() => {
   if (!toolsUsed.value || toolsUsed.value.length === 0) return false
-  return toolsUsed.value.some(tool => tool.name === 'get_bookings' && tool.result && tool.result.data)
+
+  // Debug: Log all tools to see what we have
+  const bookingsTool = toolsUsed.value.find(tool => tool.name === 'get_bookings')
+  if (bookingsTool) {
+    console.log('[ChatMessage] get_bookings tool found:', bookingsTool)
+    console.log('[ChatMessage] tool.result:', bookingsTool.result)
+
+    // MCP protocol wraps result in { result: {...} }
+    const actualData = bookingsTool.result?.result?.data || bookingsTool.result?.data
+    console.log('[ChatMessage] Actual data:', actualData)
+  }
+
+  // Check for data in both MCP format (result.result.data) and direct format (result.data)
+  return toolsUsed.value.some(tool =>
+    tool.name === 'get_bookings' &&
+    tool.result &&
+    (tool.result.result?.data || tool.result.data)
+  )
 })
 
 // Get bookings data from tools
 const bookingsData = computed(() => {
   if (!hasBookings.value) return null
   const bookingsTool = toolsUsed.value.find(tool => tool.name === 'get_bookings' && tool.result)
-  if (!bookingsTool || !bookingsTool.result || !bookingsTool.result.data) return null
+  if (!bookingsTool || !bookingsTool.result) {
+    console.log('[ChatMessage] bookingsData: no tool result found')
+    return null
+  }
+
+  // MCP protocol wraps result in { result: {...} }, so check both formats
+  const actualResult = bookingsTool.result.result || bookingsTool.result
+  if (!actualResult.data) {
+    console.log('[ChatMessage] bookingsData: no data array found')
+    return null
+  }
 
   // Transform bookings data for table display
-  return bookingsTool.result.data.map(booking => ({
+  return actualResult.data.map(booking => ({
     booking_id: booking.booking_id,
     status: booking.booking_status,
     payment_status: booking.payment_status,

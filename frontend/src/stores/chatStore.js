@@ -116,17 +116,23 @@ export const useChatStore = defineStore('chat', () => {
       const response = await chatApi.getConversation(conversationId)
 
       if (response.conversation && response.conversation.messages) {
-        const formattedMessages = response.conversation.messages.map(msg => ({
-          id: msg.id,
-          role: msg.role,
-          content: msg.content,
-          timestamp: msg.createdAt?._seconds
-            ? new Date(msg.createdAt._seconds * 1000).toISOString()
-            : msg.createdAt,
-          metadata: msg.metadata,
-          // Preserve toolsUsed data from database
-          toolsUsed: msg.toolsUsed || msg.metadata?.toolsUsed || []
-        }))
+        const formattedMessages = response.conversation.messages.map(msg => {
+          console.log('[Chat Store] Loading message:', msg.id, 'metadata:', msg.metadata)
+          console.log('[Chat Store] msg.toolsUsed:', msg.toolsUsed)
+          console.log('[Chat Store] msg.metadata?.toolsUsed:', msg.metadata?.toolsUsed)
+
+          return {
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            timestamp: msg.createdAt?._seconds
+              ? new Date(msg.createdAt._seconds * 1000).toISOString()
+              : msg.createdAt,
+            metadata: msg.metadata,
+            // Preserve toolsUsed data from database
+            toolsUsed: msg.toolsUsed || msg.metadata?.toolsUsed || []
+          }
+        })
 
         messages.value.set(conversationId, formattedMessages)
         console.log(`[Chat Store] Loaded ${formattedMessages.length} messages for conversation ${conversationId}`)

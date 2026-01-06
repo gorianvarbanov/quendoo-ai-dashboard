@@ -860,6 +860,10 @@ export class QuendooClaudeIntegration {
       }
 
       console.log(`[Quendoo Streaming] Completed with ${toolsUsedInfo.length} tool(s)`);
+      console.log(`[Quendoo Streaming] toolsUsedInfo length:`, toolsUsedInfo.length);
+      console.log(`[Quendoo Streaming] First tool:`, toolsUsedInfo[0]);
+      console.log(`[Quendoo Streaming] First tool has result:`, !!toolsUsedInfo[0]?.result);
+      console.log(`[Quendoo Streaming] filterResult.filtered:`, filterResult.filtered);
 
       return {
         content,

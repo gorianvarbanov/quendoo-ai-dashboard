@@ -375,7 +375,13 @@ async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_ke
         )
 
     elif tool_name == "get_bookings":
-        return await client.get_bookings()
+        result = await client.get_bookings()
+        print(f"[DEBUG] get_bookings result type: {type(result)}")
+        print(f"[DEBUG] get_bookings result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
+        if isinstance(result, dict) and "data" in result:
+            print(f"[DEBUG] get_bookings data length: {len(result['data']) if isinstance(result['data'], list) else 'not a list'}")
+        print(f"[DEBUG] get_bookings full result: {result}")
+        return result
 
     elif tool_name == "get_booking_offers":
         return await client.get_booking_offers(
