@@ -635,6 +635,68 @@ const bookingsData = computed(() => {
   }))
 })
 
+// Helper function to unwrap MCP protocol result format
+// MCP wraps all results in { result: {...} } format, but we need direct access
+function unwrapMCPResult(toolResult) {
+  if (!toolResult) return null
+  return toolResult.result || toolResult
+}
+
+// Detect if get_rooms_details tool was used
+const hasRoomDetails = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+  return toolsUsed.value.some(tool => tool.name === 'get_rooms_details' && tool.result)
+})
+
+// Get room details data with MCP unwrapping
+const roomDetailsData = computed(() => {
+  if (!hasRoomDetails.value) return null
+  const roomDetailsTool = toolsUsed.value.find(tool => tool.name === 'get_rooms_details' && tool.result)
+  if (!roomDetailsTool) return null
+
+  // Debug logging
+  console.log('[ChatMessage] get_rooms_details tool found:', roomDetailsTool)
+  console.log('[ChatMessage] tool.result:', roomDetailsTool.result)
+
+  // Unwrap MCP format
+  const unwrapped = unwrapMCPResult(roomDetailsTool.result)
+  console.log('[ChatMessage] Unwrapped room details data:', unwrapped)
+
+  return unwrapped
+})
+
+// Detect if get_property_settings tool was used
+const hasPropertySettings = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+  return toolsUsed.value.some(tool => tool.name === 'get_property_settings' && tool.result)
+})
+
+// Get property settings data with MCP unwrapping
+const propertySettingsData = computed(() => {
+  if (!hasPropertySettings.value) return null
+  const settingsTool = toolsUsed.value.find(tool => tool.name === 'get_property_settings' && tool.result)
+  if (!settingsTool) return null
+
+  // Unwrap MCP format
+  return unwrapMCPResult(settingsTool.result)
+})
+
+// Detect if get_booking_offers tool was used
+const hasBookingOffers = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+  return toolsUsed.value.some(tool => tool.name === 'get_booking_offers' && tool.result)
+})
+
+// Get booking offers data with MCP unwrapping
+const bookingOffersData = computed(() => {
+  if (!hasBookingOffers.value) return null
+  const offersTool = toolsUsed.value.find(tool => tool.name === 'get_booking_offers' && tool.result)
+  if (!offersTool) return null
+
+  // Unwrap MCP format
+  return unwrapMCPResult(offersTool.result)
+})
+
 // Room gallery state
 const roomGalleryOpen = ref(false)
 
