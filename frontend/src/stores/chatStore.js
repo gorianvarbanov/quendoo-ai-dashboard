@@ -1,13 +1,13 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { chatApi } from '../services/api'
+import { useSettingsStore } from './settingsStore'
 
 const STORAGE_KEY_CONVERSATIONS = 'quendoo-conversations'
 const STORAGE_KEY_MESSAGES = 'quendoo-messages'
 const STORAGE_KEY_CURRENT_CONV = 'quendoo-current-conversation'
 
 export const useChatStore = defineStore('chat', () => {
-
   // State
   const conversations = ref(new Map())
   const currentConversationId = ref(null)
@@ -240,7 +240,7 @@ export const useChatStore = defineStore('chat', () => {
     saveToStorage()
   }
 
-  async function sendMessage(content, serverId = null, quendooApiKey = null) {
+  async function sendMessage(content, serverId = null) {
     if (!content.trim()) return
 
     try {
@@ -277,8 +277,12 @@ export const useChatStore = defineStore('chat', () => {
       isStreaming.value = true
       error.value = null
 
-      // Track tools being executed in real-time (use plain array instead of ref to avoid bundling issues)
-      const toolsInProgress = []
+      // Get Quendoo API key from settings
+      const settingsStore = useSettingsStore()
+      const quendooApiKey = settingsStore.quendooApiKey
+
+      // Track tools being executed in real-time
+      const toolsInProgress = ref([])
 
       // Create a temporary assistant message that will be updated in real-time
       const tempMessageId = `msg_${Date.now()}_temp`
@@ -287,7 +291,7 @@ export const useChatStore = defineStore('chat', () => {
         role: 'assistant',
         content: '',  // Will be filled when complete
         timestamp: new Date().toISOString(),
-        toolsUsed: toolsInProgress,
+        toolsUsed: toolsInProgress.value,
         isStreaming: true  // Mark as streaming
       })
 
@@ -302,7 +306,7 @@ export const useChatStore = defineStore('chat', () => {
           // Real-time callback when a tool starts
           onToolStart: (toolName, toolParams) => {
             console.log(`[Chat Store] Tool started: ${toolName}`)
-            toolsInProgress.push({
+            toolsInProgress.value.push({
               name: toolName,
               params: toolParams,
               status: 'running'
@@ -312,7 +316,7 @@ export const useChatStore = defineStore('chat', () => {
             const msgs = messages.value.get(conversationId)
             const tempMsg = msgs.find(m => m.id === tempMessageId)
             if (tempMsg) {
-              tempMsg.toolsUsed = [...toolsInProgress]
+              tempMsg.toolsUsed = [...toolsInProgress.value]
             }
             saveToStorage()
           },
@@ -322,7 +326,7 @@ export const useChatStore = defineStore('chat', () => {
             console.log(`[Chat Store] Tool completed: ${tool.name} (${tool.duration}ms)`)
 
             // Find and update the tool in progress
-            const toolInProgress = toolsInProgress.find(t => t.name === tool.name && t.status === 'running')
+            const toolInProgress = toolsInProgress.value.find(t => t.name === tool.name && t.status === 'running')
             if (toolInProgress) {
               toolInProgress.status = 'completed'
               toolInProgress.duration = tool.duration
@@ -332,7 +336,7 @@ export const useChatStore = defineStore('chat', () => {
             const msgs = messages.value.get(conversationId)
             const tempMsg = msgs.find(m => m.id === tempMessageId)
             if (tempMsg) {
-              tempMsg.toolsUsed = [...toolsInProgress]
+              tempMsg.toolsUsed = [...toolsInProgress.value]
             }
             saveToStorage()
           },

@@ -183,12 +183,6 @@
       </div>
     </div>
 
-    <!-- Availability Panel -->
-    <AvailabilityPanel
-      v-model="availabilityPanelOpen"
-      :raw-data="availabilityData"
-    />
-
     <!-- Settings Drawer -->
     <v-navigation-drawer
       v-model="settingsDrawer"
@@ -260,7 +254,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useChatStore } from '@/stores/chatStore'
@@ -269,19 +263,10 @@ import { chatApi } from '@/services/api'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 
-// Lazy load AvailabilityPanel to avoid bundling issues
-const AvailabilityPanel = defineAsyncComponent(() =>
-  import('./AvailabilityPanel.vue')
-)
-
 const router = useRouter()
 const theme = useTheme()
 const chatStore = useChatStore()
 const settingsStore = useSettingsStore()
-
-// Availability panel state
-const availabilityPanelOpen = ref(false)
-const availabilityData = ref(null)
 
 
 // Local state
@@ -331,21 +316,6 @@ watch(selectedModel, (newDisplayName) => {
   console.log('[ChatContainer] Model changed to:', modelMap[newDisplayName])
 })
 
-// Watch for new messages with get_availability tool
-watch(currentMessages, (newMessages) => {
-  // Check latest assistant message for get_availability tool
-  const latestMessage = newMessages[newMessages.length - 1]
-  if (latestMessage && latestMessage.role === 'assistant' && latestMessage.toolsUsed) {
-    // Find get_availability tool
-    const availabilityTool = latestMessage.toolsUsed.find(tool => tool.name === 'get_availability')
-    if (availabilityTool && availabilityTool.result) {
-      console.log('[ChatContainer] get_availability tool detected, opening panel')
-      availabilityData.value = availabilityTool.result
-      availabilityPanelOpen.value = true
-    }
-  }
-}, { deep: true })
-
 // Computed properties
 const currentMessages = computed(() => chatStore.currentMessages)
 const currentConversation = computed(() => chatStore.currentConversation)
@@ -362,7 +332,7 @@ const recentConversations = computed(() => {
 
 // Methods
 function handleSendMessage(content) {
-  chatStore.sendMessage(content, null, settingsStore.quendooApiKey)
+  chatStore.sendMessage(content)
 }
 
 async function handleNewConversation() {
