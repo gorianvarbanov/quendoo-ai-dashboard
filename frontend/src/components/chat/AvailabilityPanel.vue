@@ -110,7 +110,9 @@
 
 <script setup>
 import { computed } from 'vue'
-import { format, parseISO } from 'date-fns'
+import * as dateFns from 'date-fns'
+
+const { format, parseISO } = dateFns
 
 const props = defineProps({
   modelValue: {
