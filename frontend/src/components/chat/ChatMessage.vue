@@ -191,6 +191,51 @@
         </div>
       </div>
 
+      <!-- Availability Summary (shown when availability data is detected) -->
+      <div v-if="hasAvailability && availabilitySummary && !isUser && !isStreaming" class="availability-summary">
+        <div class="availability-header">
+          <v-icon size="18" color="primary" class="mr-2">mdi-calendar-check</v-icon>
+          <span class="availability-title">Availability Summary</span>
+          <v-chip size="x-small" color="primary" variant="tonal" class="ml-2">
+            {{ availabilitySummary.date_from }} - {{ availabilitySummary.date_to }}
+          </v-chip>
+        </div>
+
+        <div class="availability-rooms">
+          <div
+            v-for="room in availabilitySummary.rooms"
+            :key="room.room_id"
+            class="availability-room-card"
+          >
+            <div class="room-card-header">
+              <v-icon size="16" color="purple">mdi-bed</v-icon>
+              <span class="room-card-name">{{ room.room_name }}</span>
+            </div>
+            <div class="room-card-stats">
+              <div class="room-stat">
+                <span class="stat-label">Total Available:</span>
+                <span class="stat-value">{{ room.total_qty }} rooms</span>
+              </div>
+              <div class="room-stat">
+                <span class="stat-label">Active Days:</span>
+                <span class="stat-value">{{ room.active_days }} / {{ availabilitySummary.total_days }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-calendar-eye"
+          color="primary"
+          class="mt-3"
+          @click="openAvailabilityPanel"
+        >
+          View Full Calendar
+        </v-btn>
+      </div>
+
       <!-- Table Viewer Button (shown when tables detected and typing is complete) -->
       <div v-if="hasTable && !isUser && !isStreaming && !isTyping" class="table-viewer-button">
         <v-btn
@@ -249,6 +294,12 @@
       :title="'Room Photos'"
       :images="roomImages"
     />
+
+    <!-- Availability Panel Component -->
+    <AvailabilityPanel
+      v-model="availabilityPanelOpen"
+      :raw-data="availabilityToolData"
+    />
   </div>
 </template>
 
@@ -258,6 +309,7 @@ import { format } from 'date-fns'
 import { marked } from 'marked'
 import TableViewer from '@/components/common/TableViewer.vue'
 import RoomGallery from '@/components/chat/RoomGallery.vue'
+import AvailabilityPanel from '@/components/chat/AvailabilityPanel.vue'
 
 // Configure marked for better rendering
 marked.setOptions({
@@ -621,6 +673,82 @@ async function copyMessage() {
       console.error('[ChatMessage] Fallback copy also failed:', fallbackError)
     }
   }
+}
+
+// Availability Panel state and data
+const availabilityPanelOpen = ref(false)
+
+// Detect if message has availability data from get_availability tool
+const hasAvailability = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+
+  return toolsUsed.value.some(tool =>
+    tool.name === 'get_availability' && tool.result
+  )
+})
+
+// Extract availability data from tool results
+const availabilityToolData = computed(() => {
+  if (!hasAvailability.value) return null
+
+  const availabilityTool = toolsUsed.value.find(tool => tool.name === 'get_availability')
+  if (!availabilityTool || !availabilityTool.result) return null
+
+  try {
+    // Parse result if it's a string
+    const result = typeof availabilityTool.result === 'string'
+      ? JSON.parse(availabilityTool.result)
+      : availabilityTool.result
+
+    console.log('[ChatMessage] Parsed availability data:', result)
+    return result
+  } catch (error) {
+    console.error('[ChatMessage] Failed to parse availability data:', error)
+    return null
+  }
+})
+
+// Create summary data for in-chat display
+const availabilitySummary = computed(() => {
+  if (!availabilityToolData.value) return null
+
+  const data = availabilityToolData.value
+  if (!data.availability || !Array.isArray(data.availability)) return null
+
+  // Group by room and calculate totals
+  const roomsMap = new Map()
+  const datesSet = new Set()
+
+  data.availability.forEach(entry => {
+    datesSet.add(entry.date)
+
+    if (!roomsMap.has(entry.room_id)) {
+      roomsMap.set(entry.room_id, {
+        room_id: entry.room_id,
+        room_name: entry.room_name || `Room ${entry.room_id}`,
+        total_qty: 0,
+        active_days: 0
+      })
+    }
+
+    const room = roomsMap.get(entry.room_id)
+    if (entry.is_opened) {
+      room.total_qty += entry.qty || 0
+      room.active_days++
+    }
+  })
+
+  return {
+    date_from: data.date_from,
+    date_to: data.date_to,
+    total_days: datesSet.size,
+    rooms: Array.from(roomsMap.values())
+  }
+})
+
+function openAvailabilityPanel() {
+  availabilityPanelOpen.value = true
+  console.log('[ChatMessage] Opening availability panel with data:', availabilityToolData.value)
 }
 
 // Format content with Markdown support
@@ -1658,5 +1786,76 @@ const formattedContent = computed(() => {
   50% {
     opacity: 0.3;
   }
+}
+
+/* Availability Summary Styles */
+.availability-summary {
+  margin-top: 12px;
+  padding: 16px;
+  background: rgba(var(--v-theme-primary), 0.05);
+  border: 1px solid rgba(var(--v-theme-primary), 0.2);
+  border-radius: 12px;
+}
+
+.availability-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.availability-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.availability-rooms {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.availability-room-card {
+  padding: 12px;
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 8px;
+}
+
+.room-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.room-card-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.room-card-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.room-stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+}
+
+.stat-label {
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.stat-value {
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
 }
 </style>
