@@ -336,11 +336,38 @@ async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_ke
         )
 
     elif tool_name == "get_availability":
-        return await client.get_availability(
+        result = await client.get_availability(
             date_from=tool_args["date_from"],
             date_to=tool_args["date_to"],
             sysres=tool_args["sysres"]
         )
+
+        # Transform Quendoo API format to frontend-friendly format
+        # Input: {"data": {"44": {"2026-02-01": 10, "2026-02-02": 10, ...}, "45": {...}}}
+        # Output: {"availability": [{"room_id": 44, "date": "2026-02-01", "qty": 10, "is_opened": true}, ...]}
+        if result and "data" in result:
+            availability_list = []
+            for room_id_str, dates_dict in result["data"].items():
+                room_id = int(room_id_str)
+                for date_str, qty in dates_dict.items():
+                    availability_list.append({
+                        "room_id": room_id,
+                        "room_name": f"Room {room_id}",  # Will be enriched by frontend if needed
+                        "date": date_str,
+                        "qty": qty,
+                        "is_opened": True
+                    })
+
+            # Sort by room_id and date
+            availability_list.sort(key=lambda x: (x["room_id"], x["date"]))
+
+            return {
+                "date_from": tool_args["date_from"],
+                "date_to": tool_args["date_to"],
+                "availability": availability_list
+            }
+
+        return result
 
     elif tool_name == "update_availability":
         return await client.update_availability(
