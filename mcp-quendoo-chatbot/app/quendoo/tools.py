@@ -94,7 +94,7 @@ QUENDOO_TOOLS = [
     },
     {
         "name": "get_booking_offers",
-        "description": "Fetch booking offers for a booking module code and stay dates. ALWAYS ask the user for check-in date, number of nights, and number of guests if not explicitly provided in their message.",
+        "description": "PRIMARY TOOL FOR OFFERS AND PRICES. Use when user asks for offers, prices, 'колко струва', 'дай оферта'. Returns available rooms with prices and availability. DO NOT combine with get_rooms_details or get_property_settings - this tool gives you everything you need for pricing queries.",
         "inputSchema": {
             "type": "object",
             "properties": {

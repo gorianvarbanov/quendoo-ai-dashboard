@@ -434,14 +434,10 @@ export class QuendooClaudeIntegration {
         }))
       };
 
-      // Force tool use on first iteration to prevent hesitation
-      if (loopCount === 1 && this.availableTools.length > 0) {
-        requestParams.tool_choice = { type: "any" };
-        console.log('[Quendoo] First iteration: forcing tool_choice = any');
-      } else {
-        requestParams.tool_choice = { type: "auto" };
-        console.log(`[Quendoo] Iteration ${loopCount}: using tool_choice = auto`);
-      }
+      // Always use auto tool choice in the multi-tool loop
+      // Let Claude decide whether more tools are needed based on system prompt
+      requestParams.tool_choice = { type: "auto" };
+      console.log(`[Quendoo] Iteration ${loopCount}: using tool_choice = auto (let Claude decide)`);
 
       finalResponse = await this.anthropic.messages.create(requestParams);
 
@@ -673,13 +669,12 @@ export class QuendooClaudeIntegration {
         max_tokens: 4096,
         system: systemPrompt || 'You are a helpful AI assistant for Quendoo business operations.',
         messages: history,
-        tools: claudeTools
+        tools: claudeTools,
+        tool_choice: { type: "auto" } // Always use auto, let system prompt guide tool selection
       };
 
-      // For simple tasks, force immediate tool use
-      if (complexity === 'simple' && claudeTools.length > 0) {
-        requestParams.tool_choice = { type: "any" };
-      }
+      // REMOVED: Forced tool_choice = "any" was causing Claude to call too many tools
+      // System prompt now guides tool selection with clear instructions
 
       // Emit thinking callback
       if (callbacks.onThinking) {

@@ -911,6 +911,9 @@ const bookingOffersData = computed(() => {
 // Room gallery state
 const roomGalleryOpen = ref(false)
 
+// Availability panel state
+const availabilityPanelOpen = ref(false)
+
 // Debug panel state
 const debugPanelOpen = ref(false) // Closed by default
 
