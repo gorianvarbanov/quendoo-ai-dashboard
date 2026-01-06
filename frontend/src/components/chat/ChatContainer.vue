@@ -260,7 +260,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, defineAsyncComponent } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useChatStore } from '@/stores/chatStore'
@@ -268,7 +268,11 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { chatApi } from '@/services/api'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
-import AvailabilityPanel from './AvailabilityPanel.vue'
+
+// Lazy load AvailabilityPanel to avoid bundling issues
+const AvailabilityPanel = defineAsyncComponent(() =>
+  import('./AvailabilityPanel.vue')
+)
 
 const router = useRouter()
 const theme = useTheme()
