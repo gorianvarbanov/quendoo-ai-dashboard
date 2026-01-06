@@ -175,12 +175,35 @@ When using tools, ensure parameters are correctly formatted:
   ⚠️ NEVER use this tool when user asks for offers, prices, or availability - use get_booking_offers instead.
   ⚠️ DO NOT call this tool before get_booking_offers - you don't need room photos to send offers.
 
-  **After calling this tool, you MUST format the results clearly:**
-  - List each room type with its name, size, bed configuration
-  - Include key amenities (балкон, изглед, климатик, etc.)
-  - If photos are available, include image URLs in Markdown format
-  - Use numbered list format (1., 2., 3.) for multiple rooms
-  - Present in Bulgarian with clear, professional formatting
+  **ABSOLUTE REQUIREMENT - YOU MUST FORMAT THE DATA EXACTLY AS SHOWN BELOW:**
+
+  After calling this tool, you receive a result like: { result: { data: [ { id, name, type_name, sqm_area, regular_beds, extra_beds, description, images: [] }, ... ] } }
+
+  You MUST iterate through EACH item in result.data array and format it using this EXACT structure:
+
+  1. **Apartment** (Apartment)
+     - Площ: 55 кв.м
+     - Легла: 4 основни + 1 допълнително
+     - The stylish apartments with sea view provide the guests of the hotel with a perfect atmosphere for a relaxing vacation.
+     ![Apartment](https://booking.quendoo.com/files/mf/4dd47d6aab116a4c0e4f5a5abbbc48f7_iStock-471958961.jpg)
+
+  2. **Double Room - Inland view** (Studio)
+     - Площ: 35 кв.м
+     - Легла: 2 основни
+     - The double rooms overlooking the park provide comfort, peacefulness and quiet in their 35 m2 of space.
+     ![Double Room](https://booking.quendoo.com/files/mf/38dcbfff6c9041a29965540e350e737e_iStock-153626164.jpg)
+
+  CRITICAL RULES:
+  - NEVER say "I've provided information about X room types" - that is WRONG
+  - NEVER say "including names, sizes, bed configurations" - that is WRONG
+  - NEVER say "The room details have been fully presented" - that is WRONG
+  - You MUST show the actual room names (Apartment, Double Room - Inland view, etc.)
+  - You MUST show the actual square meters (55, 35, etc.)
+  - You MUST show the actual bed counts (4 osnovni + 1 dopalnitelno, 2 osnovni, etc.)
+  - You MUST show the actual descriptions
+  - You MUST show the actual image URLs in Markdown format
+
+  If you do NOT show the actual data, your response is INCORRECT and INCOMPLETE.
 
   Optional params: api_lng, room_id
 

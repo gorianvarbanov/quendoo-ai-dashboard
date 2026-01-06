@@ -191,6 +191,48 @@
         </div>
       </div>
 
+      <!-- DEBUG PANEL - Shows toolsUsed structure for debugging -->
+      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0" class="debug-panel">
+        <div class="debug-header" @click="toggleDebugPanel">
+          <v-icon size="16" color="warning">mdi-bug</v-icon>
+          <span class="debug-title">DEBUG: toolsUsed Structure</span>
+          <v-icon size="16" color="grey">{{ debugPanelOpen ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
+        </div>
+        <div v-if="debugPanelOpen" class="debug-content">
+          <div v-for="(tool, idx) in toolsUsed" :key="idx" class="debug-tool-item">
+            <div class="debug-tool-header">Tool {{ idx }}:</div>
+            <div class="debug-field">
+              <span class="debug-label">name:</span>
+              <span class="debug-value">{{ tool?.name || 'undefined' }}</span>
+            </div>
+            <div class="debug-field">
+              <span class="debug-label">has result:</span>
+              <span class="debug-value" :class="tool?.result ? 'debug-true' : 'debug-false'">
+                {{ !!tool?.result }}
+              </span>
+            </div>
+            <div class="debug-field">
+              <span class="debug-label">result type:</span>
+              <span class="debug-value">{{ typeof tool?.result }}</span>
+            </div>
+            <div v-if="tool?.result" class="debug-field">
+              <span class="debug-label">result keys:</span>
+              <span class="debug-value">{{ Object.keys(tool.result).join(', ') }}</span>
+            </div>
+            <div class="debug-field">
+              <span class="debug-label">Full tool object:</span>
+              <pre class="debug-json">{{ JSON.stringify(tool, null, 2) }}</pre>
+            </div>
+          </div>
+          <div class="debug-field">
+            <span class="debug-label">hasRoomDetails computed:</span>
+            <span class="debug-value" :class="hasRoomDetails ? 'debug-true' : 'debug-false'">
+              {{ hasRoomDetails }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <!-- Availability Summary Table (shown when availability data is detected) -->
       <div v-if="hasAvailability && availabilitySummary && !isUser && !isStreaming" class="availability-summary">
         <div class="availability-header">
@@ -310,6 +352,58 @@
           <v-chip size="small" color="grey" variant="outlined">
             Показани първите 10 от {{ bookingsData.length }} резервации
           </v-chip>
+        </div>
+      </div>
+
+      <!-- Room Details Display (shown when get_rooms_details tool used) -->
+      <div v-if="hasRoomDetails && roomDetailsData && !isUser && !isStreaming" class="room-details-display">
+        <div class="room-details-header">
+          <v-icon size="18" color="primary" class="mr-2">mdi-bed</v-icon>
+          <span class="room-details-title">Детайли за стаите</span>
+        </div>
+
+        <div v-if="roomDetailsData.data && roomDetailsData.data.length > 0" class="rooms-grid">
+          <div
+            v-for="(room, index) in roomDetailsData.data"
+            :key="room.id"
+            class="room-card"
+          >
+            <!-- Room Image -->
+            <div v-if="room.images && room.images.length > 0" class="room-image-container">
+              <img :src="room.images[0]" :alt="room.name" class="room-image" />
+            </div>
+
+            <!-- Room Info -->
+            <div class="room-info-container">
+              <h3 class="room-name">{{ index + 1 }}. {{ room.name }}</h3>
+              <div class="room-type">{{ room.type_name }}</div>
+
+              <div class="room-specs">
+                <div class="room-spec-item">
+                  <v-icon size="16" color="grey-darken-1">mdi-vector-square</v-icon>
+                  <span>{{ room.sqm_area }} кв.м</span>
+                </div>
+                <div class="room-spec-item">
+                  <v-icon size="16" color="grey-darken-1">mdi-bed</v-icon>
+                  <span>{{ room.regular_beds }} легла</span>
+                  <span v-if="room.extra_beds > 0"> + {{ room.extra_beds }} доп.</span>
+                </div>
+              </div>
+
+              <p class="room-description">{{ room.description }}</p>
+
+              <!-- View Gallery Button -->
+              <v-btn
+                v-if="room.images && room.images.length > 1"
+                size="small"
+                variant="text"
+                prepend-icon="mdi-image-multiple"
+                @click="openRoomGallery(room)"
+              >
+                Виж галерия ({{ room.images.length }} снимки)
+              </v-btn>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -480,6 +574,11 @@ function toggleToolsAccordion() {
   toolsExpanded.value = !toolsExpanded.value
 }
 
+// Toggle debug panel
+function toggleDebugPanel() {
+  debugPanelOpen.value = !debugPanelOpen.value
+}
+
 // Copy tool code to clipboard
 async function copyToolCode(tool) {
   try {
@@ -644,8 +743,25 @@ function unwrapMCPResult(toolResult) {
 
 // Detect if get_rooms_details tool was used
 const hasRoomDetails = computed(() => {
-  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
-  return toolsUsed.value.some(tool => tool.name === 'get_rooms_details' && tool.result)
+  console.log('[ChatMessage] hasRoomDetails check - toolsUsed.value:', toolsUsed.value)
+  console.log('[ChatMessage] hasRoomDetails check - toolsUsed.value.length:', toolsUsed.value?.length)
+
+  if (!toolsUsed.value || toolsUsed.value.length === 0) {
+    console.log('[ChatMessage] hasRoomDetails returning false - empty array')
+    return false
+  }
+
+  // Debug each tool in array
+  toolsUsed.value.forEach((tool, idx) => {
+    console.log(`[ChatMessage] Tool ${idx}:`, tool)
+    console.log(`[ChatMessage] Tool ${idx} name:`, tool?.name)
+    console.log(`[ChatMessage] Tool ${idx} has result:`, !!tool?.result)
+    console.log(`[ChatMessage] Tool ${idx} result value:`, tool?.result)
+  })
+
+  const result = toolsUsed.value.some(tool => tool.name === 'get_rooms_details' && tool.result)
+  console.log('[ChatMessage] hasRoomDetails result:', result)
+  return result
 })
 
 // Get room details data with MCP unwrapping
@@ -699,6 +815,9 @@ const bookingOffersData = computed(() => {
 
 // Room gallery state
 const roomGalleryOpen = ref(false)
+
+// Debug panel state
+const debugPanelOpen = ref(false) // Closed by default
 
 // Detect and extract room data (grouped by room)
 const roomCards = computed(() => {
@@ -2323,5 +2442,181 @@ const formattedContent = computed(() => {
 .bookings-footer {
   margin-top: 8px;
   text-align: center;
+}
+
+/* Room Details Display Styles */
+.room-details-display {
+  margin: 16px 0;
+  padding: 16px;
+  background: rgb(var(--v-theme-surface));
+  border-radius: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.room-details-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.room-details-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.room-card {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: box-shadow 0.2s;
+}
+
+.room-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.room-image-container {
+  width: 100%;
+  height: 200px;
+  overflow: hidden;
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.room-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-info-container {
+  padding: 16px;
+}
+
+.room-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.room-type {
+  font-size: 0.85rem;
+  color: rgb(var(--v-theme-primary));
+  margin-bottom: 12px;
+}
+
+.room-specs {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.room-spec-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+}
+
+.room-description {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(var(--v-theme-on-surface), 0.8);
+  margin-bottom: 12px;
+}
+
+/* Debug Panel Styles */
+.debug-panel {
+  margin: 12px 0;
+  border: 2px solid #ff9800;
+  border-radius: 8px;
+  background: rgba(255, 152, 0, 0.05);
+  overflow: hidden;
+}
+
+.debug-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 152, 0, 0.1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.debug-header:hover {
+  background: rgba(255, 152, 0, 0.15);
+}
+
+.debug-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #f57c00;
+  flex: 1;
+}
+
+.debug-content {
+  padding: 12px;
+}
+
+.debug-tool-item {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 152, 0, 0.2);
+}
+
+.debug-tool-header {
+  font-weight: 600;
+  color: #f57c00;
+  margin-bottom: 8px;
+  font-size: 0.9rem;
+}
+
+.debug-field {
+  margin: 6px 0;
+  font-size: 0.85rem;
+  font-family: 'Courier New', monospace;
+}
+
+.debug-label {
+  color: #666;
+  font-weight: 600;
+  margin-right: 8px;
+}
+
+.debug-value {
+  color: #333;
+}
+
+.debug-true {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.debug-false {
+  color: #f44336;
+  font-weight: bold;
+}
+
+.debug-json {
+  margin-top: 6px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  overflow-x: auto;
+  max-height: 300px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 </style>

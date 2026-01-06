@@ -781,11 +781,17 @@ app.post('/chat/quendoo', async (req, res) => {
               })}\n\n`);
             },
             // Callback for when a tool completes
-            onToolComplete: (toolName, toolParams, duration) => {
+            onToolComplete: (toolName, toolParams, duration, toolResult) => {
               console.log(`[SSE] Tool completed: ${toolName} (${duration}ms)`);
               res.write(`data: ${JSON.stringify({
                 type: 'tool_progress',
-                tool: { name: toolName, params: toolParams, duration, status: 'completed' }
+                tool: {
+                  name: toolName,
+                  params: toolParams,
+                  duration,
+                  status: 'completed',
+                  result: toolResult // Include tool result for frontend visualization
+                }
               })}\n\n`);
             },
             // Callback for thinking/processing
@@ -814,6 +820,21 @@ app.post('/chat/quendoo', async (req, res) => {
           });
         } catch (dbError) {
           console.error('[Database] Failed to persist messages:', dbError.message);
+        }
+
+        // DEBUG: Log toolsUsed data
+        console.log('[SSE] Tools used count:', result.toolsUsed?.length || 0);
+        if (result.toolsUsed && result.toolsUsed.length > 0) {
+          result.toolsUsed.forEach((tool, idx) => {
+            console.log(`[SSE] Tool ${idx + 1}: ${tool.name}`);
+            console.log(`[SSE]   - Has result:`, !!tool.result);
+            console.log(`[SSE]   - Has params:`, !!tool.params);
+            if (tool.result) {
+              const resultKeys = Object.keys(tool.result);
+              console.log(`[SSE]   - Result keys:`, resultKeys.join(', '));
+              console.log(`[SSE]   - Result sample:`, JSON.stringify(tool.result).substring(0, 200));
+            }
+          });
         }
 
         // Send final completion event

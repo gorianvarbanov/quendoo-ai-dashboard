@@ -216,6 +216,9 @@ export const useChatStore = defineStore('chat', () => {
 
   function addMessage(conversationId, message) {
     console.log('[Chat Store] addMessage called for conversation:', conversationId)
+    console.log('[Chat Store] addMessage message object:', message)
+    console.log('[Chat Store] addMessage message.toolsUsed:', message.toolsUsed)
+
     if (!messages.value.has(conversationId)) {
       messages.value.set(conversationId, [])
     }
@@ -228,6 +231,9 @@ export const useChatStore = defineStore('chat', () => {
       timestamp: new Date().toISOString(),
       ...message
     }
+
+    console.log('[Chat Store] addMessage newMessage created:', newMessage)
+    console.log('[Chat Store] addMessage newMessage.toolsUsed:', newMessage.toolsUsed)
 
     conversationMessages.push(newMessage)
 
@@ -350,6 +356,16 @@ export const useChatStore = defineStore('chat', () => {
           // Final callback when complete
           onComplete: (response) => {
             console.log('[Chat Store] Streaming complete')
+            console.log('[Chat Store] Response object:', response)
+            console.log('[Chat Store] response.toolsUsed:', response.toolsUsed)
+            console.log('[Chat Store] toolsUsed type:', typeof response.toolsUsed)
+            console.log('[Chat Store] toolsUsed isArray:', Array.isArray(response.toolsUsed))
+            if (response.toolsUsed && Array.isArray(response.toolsUsed)) {
+              console.log('[Chat Store] toolsUsed length:', response.toolsUsed.length)
+              response.toolsUsed.forEach((tool, idx) => {
+                console.log(`[Chat Store] Tool ${idx}:`, tool.name, 'has result:', !!tool.result)
+              })
+            }
 
             // Remove temporary message
             const msgs = messages.value.get(conversationId)

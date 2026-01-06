@@ -751,9 +751,9 @@ export class QuendooClaudeIntegration {
 
                 toolsUsedInfo.push(toolInfo);
 
-                // Emit tool complete callback
+                // Emit tool complete callback with result
                 if (callbacks.onToolComplete) {
-                  callbacks.onToolComplete(block.name, block.input, duration);
+                  callbacks.onToolComplete(block.name, block.input, duration, result.result);
                 }
 
                 toolResults.push({
