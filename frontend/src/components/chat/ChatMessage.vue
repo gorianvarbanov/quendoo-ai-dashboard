@@ -244,6 +244,86 @@
         </v-btn>
       </div>
 
+      <!-- Bookings Summary Table (shown when bookings data is detected) -->
+      <div v-if="hasBookings && bookingsData && !isUser && !isStreaming" class="bookings-summary">
+        <div class="bookings-header">
+          <v-icon size="18" color="primary" class="mr-2">mdi-calendar-check</v-icon>
+          <span class="bookings-title">Резервации ({{ bookingsData.length }})</span>
+        </div>
+
+        <div class="bookings-table-wrapper">
+          <table class="bookings-table">
+            <thead>
+              <tr>
+                <th class="table-header-cell">ID</th>
+                <th class="table-header-cell">Дати</th>
+                <th class="table-header-cell">Стая</th>
+                <th class="table-header-cell">Гости</th>
+                <th class="table-header-cell">Клиент</th>
+                <th class="table-header-cell">Статус</th>
+                <th class="table-header-cell">Сума</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="booking in bookingsData.slice(0, 10)" :key="booking.booking_id" class="table-row">
+                <td class="table-cell booking-id-cell">
+                  <strong>#{{ booking.booking_id }}</strong>
+                </td>
+                <td class="table-cell date-cell">
+                  <div class="date-range">
+                    <div>{{ formatBookingDate(booking.checkin_date) }}</div>
+                    <div class="date-separator">→</div>
+                    <div>{{ formatBookingDate(booking.checkout_date) }}</div>
+                  </div>
+                </td>
+                <td class="table-cell room-cell">
+                  <div v-for="(room, idx) in booking.rooms" :key="idx" class="room-info">
+                    {{ room.room_name }}
+                  </div>
+                </td>
+                <td class="table-cell guests-cell">
+                  <div v-for="(room, idx) in booking.rooms" :key="idx" class="guests-info">
+                    <v-icon size="14">mdi-account</v-icon> {{ room.adults }}
+                    <v-icon v-if="room.children > 0" size="14" class="ml-1">mdi-account-child</v-icon>
+                    <span v-if="room.children > 0">{{ room.children }}</span>
+                  </div>
+                </td>
+                <td class="table-cell client-cell">
+                  <div class="client-name">{{ booking.client_name }}</div>
+                  <div class="client-email">{{ booking.client_email }}</div>
+                </td>
+                <td class="table-cell status-cell">
+                  <v-chip
+                    size="small"
+                    :color="getBookingStatusColor(booking.status)"
+                    variant="flat"
+                  >
+                    {{ getBookingStatusLabel(booking.status) }}
+                  </v-chip>
+                  <v-chip
+                    size="small"
+                    :color="getPaymentStatusColor(booking.payment_status)"
+                    variant="outlined"
+                    class="mt-1"
+                  >
+                    {{ getPaymentStatusLabel(booking.payment_status) }}
+                  </v-chip>
+                </td>
+                <td class="table-cell amount-cell">
+                  <strong>{{ booking.total_amount }} {{ booking.currency }}</strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="bookingsData.length > 10" class="bookings-footer">
+          <v-chip size="small" color="grey" variant="outlined">
+            Показани първите 10 от {{ bookingsData.length }} резервации
+          </v-chip>
+        </div>
+      </div>
+
       <!-- Table Viewer Button (shown when tables detected and typing is complete) -->
       <div v-if="hasTable && !isUser && !isStreaming && !isTyping" class="table-viewer-button">
         <v-btn
@@ -501,6 +581,39 @@ const availabilityData = computed(() => {
   if (!hasAvailability.value) return null
   const availabilityTool = toolsUsed.value.find(tool => tool.name === 'get_availability' && tool.result)
   return availabilityTool ? availabilityTool.result : null
+})
+
+// Detect if get_bookings tool was used and has result data
+const hasBookings = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+  return toolsUsed.value.some(tool => tool.name === 'get_bookings' && tool.result && tool.result.data)
+})
+
+// Get bookings data from tools
+const bookingsData = computed(() => {
+  if (!hasBookings.value) return null
+  const bookingsTool = toolsUsed.value.find(tool => tool.name === 'get_bookings' && tool.result)
+  if (!bookingsTool || !bookingsTool.result || !bookingsTool.result.data) return null
+
+  // Transform bookings data for table display
+  return bookingsTool.result.data.map(booking => ({
+    booking_id: booking.booking_id,
+    status: booking.booking_status,
+    payment_status: booking.payment_status,
+    checkin_date: booking.checkin_date,
+    checkout_date: booking.checkout_date,
+    client_name: booking.client?.name || 'N/A',
+    client_email: booking.client?.email || 'N/A',
+    total_amount: booking.total_amount,
+    currency: booking.currency,
+    rooms: booking.booking_items?.map(item => ({
+      room_name: item.room_name,
+      adults: item.adults,
+      children: item.children,
+      amount: item.amount
+    })) || [],
+    created: booking.created_datetime
+  }))
 })
 
 // Room gallery state
@@ -762,6 +875,66 @@ function getQtyCellClass(dateRange, room) {
   if (qty === 0) return 'qty-zero'
   if (qty < 3) return 'qty-low'
   return 'qty-normal'
+}
+
+// Format booking date to Bulgarian short format
+function formatBookingDate(dateStr) {
+  if (!dateStr) return 'N/A'
+  const months = ['яну', 'фев', 'мар', 'апр', 'май', 'юни', 'юли', 'авг', 'сеп', 'окт', 'ное', 'дек']
+  try {
+    const date = new Date(dateStr)
+    return `${date.getDate()} ${months[date.getMonth()]}`
+  } catch {
+    return dateStr
+  }
+}
+
+// Get color for booking status
+function getBookingStatusColor(status) {
+  const statusMap = {
+    'new': 'blue',
+    'confirmed': 'green',
+    'cancelled': 'red',
+    'completed': 'grey',
+    'no_show': 'orange'
+  }
+  return statusMap[status] || 'grey'
+}
+
+// Get Bulgarian label for booking status
+function getBookingStatusLabel(status) {
+  const labelMap = {
+    'new': 'Нова',
+    'confirmed': 'Потвърдена',
+    'cancelled': 'Отменена',
+    'completed': 'Завършена',
+    'no_show': 'Неявяване'
+  }
+  return labelMap[status] || status
+}
+
+// Get color for payment status
+function getPaymentStatusColor(status) {
+  const statusMap = {
+    'WAITING': 'orange',
+    'PAID': 'green',
+    'PARTIALLY_PAID': 'blue',
+    'REFUNDED': 'grey',
+    'CANCELLED': 'red'
+  }
+  return statusMap[status] || 'grey'
+}
+
+// Get Bulgarian label for payment status
+function getPaymentStatusLabel(status) {
+  const labelMap = {
+    'WAITING': 'Очаква плащане',
+    'PAID': 'Платена',
+    'PARTIALLY_PAID': 'Частично платена',
+    'REFUNDED': 'Възстановена',
+    'CANCELLED': 'Отменена'
+  }
+  return labelMap[status] || status
 }
 
 // Create summary data for in-chat display with date ranges
@@ -1957,5 +2130,117 @@ const formattedContent = computed(() => {
 .qty-zero {
   background: rgba(var(--v-theme-error), 0.08);
   color: rgba(var(--v-theme-on-surface), 0.4);
+}
+
+/* Bookings Summary Styles */
+.bookings-summary {
+  margin-top: 12px;
+  padding: 16px;
+  background: rgba(var(--v-theme-primary), 0.05);
+  border: 1px solid rgba(var(--v-theme-primary), 0.2);
+  border-radius: 12px;
+}
+
+.bookings-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.bookings-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.bookings-table-wrapper {
+  overflow-x: auto;
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.bookings-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgb(var(--v-theme-surface));
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.bookings-table thead {
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.booking-id-cell {
+  font-family: 'Courier New', monospace;
+  color: rgb(var(--v-theme-primary));
+  font-size: 0.85rem;
+}
+
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.date-separator {
+  color: rgba(var(--v-theme-on-surface), 0.4);
+  font-weight: 400;
+}
+
+.room-cell {
+  max-width: 200px;
+}
+
+.room-info {
+  padding: 2px 0;
+  font-weight: 500;
+}
+
+.guests-cell {
+  white-space: nowrap;
+}
+
+.guests-info {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+}
+
+.client-cell {
+  max-width: 180px;
+}
+
+.client-name {
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
+.client-email {
+  font-size: 0.8rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.amount-cell {
+  text-align: right;
+  font-family: 'Courier New', monospace;
+  color: rgb(var(--v-theme-success));
+  font-size: 0.95rem;
+}
+
+.bookings-footer {
+  margin-top: 8px;
+  text-align: center;
 }
 </style>

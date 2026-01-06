@@ -354,12 +354,13 @@ export class QuendooClaudeIntegration {
             throw new Error(result.error.message);
           }
 
-          // Track tool usage
+          // Track tool usage with result data
           const toolInfo = {
             name: block.name,
             params: block.input,
             duration: duration,
-            success: true
+            success: true,
+            result: result.result // Add the actual result data for frontend
           };
           toolsUsedInfo.push(toolInfo);
 
@@ -488,12 +489,13 @@ export class QuendooClaudeIntegration {
                 throw new Error(result.error.message);
               }
 
-              // Track additional tool usage
+              // Track additional tool usage with result data
               const toolInfo = {
                 name: block.name,
                 params: block.input,
                 duration: duration,
-                success: true
+                success: true,
+                result: result.result // Add the actual result data for frontend
               };
               toolsUsedInfo.push(toolInfo);
 
@@ -738,18 +740,14 @@ export class QuendooClaudeIntegration {
                   throw new Error(result.error.message);
                 }
 
-                // Track tool usage
+                // Track tool usage with result data
                 const toolInfo = {
                   name: block.name,
                   params: block.input,
                   duration: duration,
-                  success: true
+                  success: true,
+                  result: result.result // Always include result for frontend visualization
                 };
-
-                // Include result for specific tools that need frontend visualization
-                if (block.name === 'get_availability' && result.result) {
-                  toolInfo.result = result.result;
-                }
 
                 toolsUsedInfo.push(toolInfo);
 
