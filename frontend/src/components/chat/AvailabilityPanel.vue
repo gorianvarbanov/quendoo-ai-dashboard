@@ -4,14 +4,19 @@
     v-model="isOpen"
     location="right"
     temporary
-    width="90%"
+    width="800px"
     class="availability-panel"
   >
     <div class="panel-header">
-      <h3 class="panel-title">
-        <v-icon color="primary" class="mr-2">mdi-calendar-check</v-icon>
-        Room Availability
-      </h3>
+      <div>
+        <h3 class="panel-title">
+          <v-icon color="primary" class="mr-2">mdi-calendar-check</v-icon>
+          Наличности по стаи
+        </h3>
+        <div v-if="availabilityData" class="date-range-subtitle">
+          {{ formatDateRange(availabilityData.date_from, availabilityData.date_to) }}
+        </div>
+      </div>
       <v-btn
         icon
         variant="text"
@@ -22,101 +27,76 @@
       </v-btn>
     </div>
 
-    <div v-if="availabilityData" class="panel-content">
-      <!-- Date Range Info -->
-      <div class="date-range-info">
-        <v-chip color="primary" variant="outlined">
-          {{ formatDate(availabilityData.date_from) }} - {{ formatDate(availabilityData.date_to) }}
-        </v-chip>
-        <v-chip color="secondary" variant="outlined" class="ml-2">
-          {{ availabilityData.days.length }} days
-        </v-chip>
-      </div>
-
-      <!-- Availability Calendar Grid -->
-      <div class="availability-calendar">
-        <!-- Header Row with Dates -->
-        <div class="calendar-header">
-          <div class="room-label-header">Rooms and qtys</div>
-          <div
-            v-for="day in availabilityData.days"
-            :key="day.date"
-            class="calendar-date-cell"
-          >
-            <div class="date-number">{{ getDayNumber(day.date) }}</div>
-            <div class="date-weekday">{{ getWeekday(day.date) }}</div>
-          </div>
-        </div>
-
-        <!-- Room Rows -->
-        <div
-          v-for="room in availabilityData.rooms"
-          :key="room.room_id"
-          class="room-row"
-        >
-          <!-- Room Name Column -->
-          <div class="room-label">
-            {{ room.room_name }}
-          </div>
-
-          <!-- Active/Inactive Row -->
-          <div class="room-subrow">
-            <div class="subrow-label">Active/Inactive</div>
-            <div
-              v-for="day in room.availability"
-              :key="`active-${room.room_id}-${day.date}`"
-              class="calendar-cell"
-              :class="{ 'cell-active': day.is_opened, 'cell-inactive': !day.is_opened }"
+    <div v-if="availabilityData && availabilityData.rooms && availabilityData.rooms.length > 0" class="panel-content">
+      <!-- Simple Table Format -->
+      <div class="availability-table-container">
+        <table class="availability-table-full">
+          <thead>
+            <tr>
+              <th class="sticky-col">Стая</th>
+              <th
+                v-for="day in availabilityData.days"
+                :key="day.date"
+                class="date-header"
+              >
+                <div class="date-col-header">
+                  <div class="date-number">{{ getDayNumber(day.date) }}</div>
+                  <div class="date-weekday">{{ getWeekday(day.date) }}</div>
+                  <div class="date-month">{{ getMonth(day.date) }}</div>
+                </div>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="room in availabilityData.rooms"
+              :key="room.room_id"
+              class="room-data-row"
             >
-              <v-icon size="14" :color="day.is_opened ? 'success' : 'error'">
-                {{ day.is_opened ? 'mdi-check' : 'mdi-close' }}
-              </v-icon>
-            </div>
-          </div>
-
-          <!-- Available Quantity Row -->
-          <div class="room-subrow">
-            <div class="subrow-label">Available qty</div>
-            <div
-              v-for="day in room.availability"
-              :key="`qty-${room.room_id}-${day.date}`"
-              class="calendar-cell qty-cell"
-              :class="{ 'qty-low': day.qty < 3, 'qty-zero': day.qty === 0 }"
-            >
-              {{ day.qty }}
-            </div>
-          </div>
-        </div>
-
-        <!-- Total Available Row -->
-        <div class="total-row">
-          <div class="room-label total-label">Total available qty</div>
-          <div
-            v-for="day in availabilityData.days"
-            :key="`total-${day.date}`"
-            class="calendar-cell total-cell"
-          >
-            {{ calculateTotalForDay(day.date) }}
-          </div>
-        </div>
+              <td class="sticky-col room-name-cell">
+                {{ room.room_name }}
+              </td>
+              <td
+                v-for="dayData in room.availability"
+                :key="dayData.date"
+                class="qty-cell-full"
+                :class="getQtyCellClass(dayData.qty, dayData.is_opened)"
+              >
+                <div class="qty-display">
+                  {{ dayData.qty }}
+                </div>
+              </td>
+            </tr>
+            <!-- Total Row -->
+            <tr class="total-row-full">
+              <td class="sticky-col total-label-cell">
+                <strong>Общо</strong>
+              </td>
+              <td
+                v-for="day in availabilityData.days"
+                :key="`total-${day.date}`"
+                class="total-cell-full"
+              >
+                <strong>{{ calculateTotalForDay(day.date) }}</strong>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
-    <div v-else class="panel-empty">
-      <v-icon size="64" color="grey-lighten-1">mdi-calendar-blank</v-icon>
-      <p class="empty-text">No availability data</p>
+    <div v-else class="panel-content empty-state">
+      <v-icon size="64" color="grey">mdi-calendar-remove</v-icon>
+      <p class="mt-4 text-grey">Няма данни за наличности</p>
     </div>
   </v-navigation-drawer>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
-  modelValue: {
-    type: Boolean,
-    default: false
-  },
+  modelValue: Boolean,
   rawData: {
     type: Object,
     default: null
@@ -134,61 +114,60 @@ const isOpen = computed({
 const availabilityData = computed(() => {
   if (!props.rawData) return null
 
-  console.log('[AvailabilityPanel] Raw data received:', JSON.stringify(props.rawData, null, 2))
+  console.log('[AvailabilityPanel] Raw data:', props.rawData)
 
   try {
-    // Handle different possible data structures
-    let actualData = props.rawData
+    // Data comes in format: {availability: [...], date_from, date_to}
+    const data = props.rawData
 
-    // If data is nested in a 'data' or 'result' property
-    if (props.rawData.data) {
-      actualData = props.rawData.data
-      console.log('[AvailabilityPanel] Found nested data:', JSON.stringify(actualData, null, 2))
-    } else if (props.rawData.result) {
-      actualData = props.rawData.result
-      console.log('[AvailabilityPanel] Found nested result:', JSON.stringify(actualData, null, 2))
+    if (!data.availability || !Array.isArray(data.availability)) {
+      console.warn('[AvailabilityPanel] No availability array found')
+      return null
     }
 
-    const date_from = actualData.date_from
-    const date_to = actualData.date_to
+    const date_from = data.date_from
+    const date_to = data.date_to
 
-    const datesSet = new Set()
+    // Group by room and collect dates
     const roomsMap = new Map()
+    const datesSet = new Set()
 
-    // Check for availability array
-    const availabilityArray = actualData.availability || actualData.rooms || []
-    console.log('[AvailabilityPanel] Availability array length:', availabilityArray.length)
+    data.availability.forEach(entry => {
+      datesSet.add(entry.date)
 
-    if (Array.isArray(availabilityArray) && availabilityArray.length > 0) {
-      availabilityArray.forEach(entry => {
-        datesSet.add(entry.date)
-
-        if (!roomsMap.has(entry.room_id)) {
-          roomsMap.set(entry.room_id, {
-            room_id: entry.room_id,
-            room_name: entry.room_name || `Room ${entry.room_id}`,
-            availability: []
-          })
-        }
-
-        roomsMap.get(entry.room_id).availability.push({
-          date: entry.date,
-          qty: entry.qty || 0,
-          is_opened: entry.is_opened === 1 || entry.is_opened === true
+      if (!roomsMap.has(entry.room_id)) {
+        roomsMap.set(entry.room_id, {
+          room_id: entry.room_id,
+          room_name: entry.room_name || `Room ${entry.room_id}`,
+          availability: []
         })
-      })
-    }
+      }
 
+      roomsMap.get(entry.room_id).availability.push({
+        date: entry.date,
+        qty: entry.qty || 0,
+        is_opened: entry.is_opened === true
+      })
+    })
+
+    // Sort dates
     const sortedDates = Array.from(datesSet).sort()
 
-    console.log('[AvailabilityPanel] Parsed data - Days:', sortedDates.length, 'Rooms:', roomsMap.size)
+    // Sort each room's availability by date
+    roomsMap.forEach(room => {
+      room.availability.sort((a, b) => a.date.localeCompare(b.date))
+    })
 
-    return {
+    const result = {
       date_from,
       date_to,
       days: sortedDates.map(date => ({ date })),
       rooms: Array.from(roomsMap.values())
     }
+
+    console.log('[AvailabilityPanel] Parsed:', result.rooms.length, 'rooms,', result.days.length, 'days')
+
+    return result
   } catch (error) {
     console.error('[AvailabilityPanel] Error parsing data:', error)
     return null
@@ -199,234 +178,265 @@ function close() {
   isOpen.value = false
 }
 
-// Native JavaScript date formatting
-function formatDate(dateStr) {
-  if (!dateStr) return ''
+function formatDateRange(from, to) {
+  if (!from || !to) return ''
+  const months = ['януари', 'февруари', 'март', 'април', 'май', 'юни', 'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
   try {
-    const date = new Date(dateStr)
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
+    const dateFrom = new Date(from)
+    const dateTo = new Date(to)
+    const monthName = months[dateFrom.getMonth()]
+    return `${dateFrom.getDate()} - ${dateTo.getDate()} ${monthName} ${dateFrom.getFullYear()}`
   } catch {
-    return dateStr
+    return `${from} - ${to}`
   }
 }
 
 function getDayNumber(dateStr) {
   try {
-    const date = new Date(dateStr)
-    return date.getDate().toString()
+    return new Date(dateStr).getDate()
   } catch {
-    return ''
+    return '?'
   }
 }
 
 function getWeekday(dateStr) {
+  const weekdays = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
   try {
-    const date = new Date(dateStr)
-    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    return weekdays[date.getDay()]
+    return weekdays[new Date(dateStr).getDay()]
   } catch {
     return ''
   }
 }
 
+function getMonth(dateStr) {
+  const months = ['яну', 'фев', 'мар', 'апр', 'май', 'юни', 'юли', 'авг', 'сеп', 'окт', 'ное', 'дек']
+  try {
+    return months[new Date(dateStr).getMonth()]
+  } catch {
+    return ''
+  }
+}
+
+function getQtyCellClass(qty, isOpened) {
+  if (!isOpened || qty === 0) return 'qty-zero'
+  if (qty < 3) return 'qty-low'
+  return 'qty-normal'
+}
+
 function calculateTotalForDay(date) {
   if (!availabilityData.value) return 0
-
   let total = 0
   availabilityData.value.rooms.forEach(room => {
-    const dayData = room.availability.find(a => a.date === date)
+    const dayData = room.availability.find(d => d.date === date)
     if (dayData && dayData.is_opened) {
       total += dayData.qty
     }
   })
   return total
 }
+
+// Watch for data changes
+watch(() => props.rawData, (newData) => {
+  console.log('[AvailabilityPanel] Data changed:', newData)
+}, { deep: true })
 </script>
 
 <style scoped>
 .availability-panel {
-  background: rgb(var(--v-theme-surface));
+  z-index: 2000;
 }
 
 .panel-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  background: rgb(var(--v-theme-background));
+  align-items: flex-start;
+  padding: 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f5f5f5;
 }
 
 .panel-title {
-  font-size: 1.25rem;
+  font-size: 20px;
   font-weight: 600;
-  color: rgb(var(--v-theme-on-surface));
   display: flex;
   align-items: center;
   margin: 0;
+}
+
+.date-range-subtitle {
+  font-size: 14px;
+  color: #666;
+  margin-top: 4px;
 }
 
 .panel-content {
   padding: 20px;
-  overflow-x: auto;
+  height: calc(100vh - 100px);
+  overflow-y: auto;
 }
 
-.date-range-info {
-  margin-bottom: 20px;
-}
-
-.availability-calendar {
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-radius: 8px;
-  overflow: hidden;
-  background: white;
-}
-
-.calendar-header {
-  display: grid;
-  grid-template-columns: 200px repeat(auto-fit, minmax(70px, 1fr));
-  background: rgba(var(--v-theme-primary), 0.08);
-  border-bottom: 2px solid rgba(var(--v-theme-on-surface), 0.12);
-}
-
-.room-label-header {
-  padding: 12px;
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: rgb(var(--v-theme-on-surface));
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-
-.calendar-date-cell {
-  padding: 8px;
-  text-align: center;
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-
-.calendar-date-cell:last-child {
-  border-right: none;
-}
-
-.date-number {
-  font-size: 1rem;
-  font-weight: 600;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-.date-weekday {
-  font-size: 0.75rem;
-  color: rgba(var(--v-theme-on-surface), 0.6);
-  text-transform: uppercase;
-}
-
-.room-row {
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-}
-
-.room-row:last-child {
-  border-bottom: none;
-}
-
-.room-label {
-  padding: 12px;
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: rgb(var(--v-theme-on-surface));
-  background: rgba(var(--v-theme-surface), 0.5);
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-
-.room-subrow {
-  display: grid;
-  grid-template-columns: 200px repeat(auto-fit, minmax(70px, 1fr));
-  align-items: center;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-
-.room-subrow:last-child {
-  border-bottom: none;
-}
-
-.subrow-label {
-  padding: 8px 12px;
-  font-size: 0.8125rem;
-  color: rgba(var(--v-theme-on-surface), 0.7);
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.12);
-  background: rgba(var(--v-theme-surface), 0.3);
-}
-
-.calendar-cell {
-  padding: 8px;
-  text-align: center;
-  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-  background: white;
-}
-
-.calendar-cell:last-child {
-  border-right: none;
-}
-
-.cell-active {
-  background: rgba(var(--v-theme-success), 0.08);
-}
-
-.cell-inactive {
-  background: rgba(var(--v-theme-error), 0.05);
-}
-
-.qty-cell {
-  font-weight: 500;
-  font-size: 0.9375rem;
-  color: rgb(var(--v-theme-on-surface));
-}
-
-.qty-low {
-  background: rgba(var(--v-theme-warning), 0.1);
-  color: rgb(var(--v-theme-warning));
-  font-weight: 600;
-}
-
-.qty-zero {
-  background: rgba(var(--v-theme-error), 0.1);
-  color: rgb(var(--v-theme-error));
-  font-weight: 600;
-}
-
-.total-row {
-  display: grid;
-  grid-template-columns: 200px repeat(auto-fit, minmax(70px, 1fr));
-  background: rgba(var(--v-theme-primary), 0.05);
-  border-top: 2px solid rgba(var(--v-theme-on-surface), 0.12);
-}
-
-.total-label {
-  background: rgba(var(--v-theme-primary), 0.1);
-  font-weight: 600;
-  border-bottom: none;
-}
-
-.total-cell {
-  font-weight: 600;
-  font-size: 1rem;
-  color: rgb(var(--v-theme-primary));
-  background: rgba(var(--v-theme-primary), 0.05);
-}
-
-.panel-empty {
+.empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 400px;
-  gap: 16px;
+  height: 100%;
+  color: #999;
 }
 
-.empty-text {
-  font-size: 1rem;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  margin: 0;
+.availability-table-container {
+  overflow-x: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+.availability-table-full {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: white;
+}
+
+.availability-table-full thead {
+  background: #1976d2;
+  color: white;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.availability-table-full th {
+  padding: 12px 8px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+  min-width: 60px;
+}
+
+.availability-table-full th.sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  background: #1565c0;
+  min-width: 150px;
+  text-align: left;
+}
+
+.date-col-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.date-number {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.date-weekday {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.date-month {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.availability-table-full tbody tr {
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.availability-table-full tbody tr:hover {
+  background: #f5f5f5;
+}
+
+.availability-table-full td {
+  padding: 10px 8px;
+  text-align: center;
+  border-right: 1px solid #e0e0e0;
+}
+
+.availability-table-full td.sticky-col {
+  position: sticky;
+  left: 0;
+  background: white;
+  font-weight: 500;
+  text-align: left;
+  padding-left: 16px;
+  z-index: 5;
+  border-right: 2px solid #e0e0e0;
+}
+
+.availability-table-full tbody tr:hover td.sticky-col {
+  background: #f5f5f5;
+}
+
+.room-name-cell {
+  font-size: 14px;
+}
+
+.qty-cell-full {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.qty-display {
+  padding: 4px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  min-width: 30px;
+}
+
+.qty-zero {
+  background: #f5f5f5;
+  color: #999;
+}
+
+.qty-zero .qty-display {
+  background: #e0e0e0;
+}
+
+.qty-low {
+  background: #fff3cd;
+  color: #856404;
+}
+
+.qty-low .qty-display {
+  background: #ffc107;
+  color: white;
+}
+
+.qty-normal {
+  background: #d4edda;
+  color: #155724;
+}
+
+.qty-normal .qty-display {
+  background: #4caf50;
+  color: white;
+}
+
+.total-row-full {
+  background: #f5f5f5;
+  font-weight: 700;
+}
+
+.total-row-full td {
+  padding: 12px 8px;
+  border-top: 2px solid #1976d2;
+}
+
+.total-label-cell {
+  background: #f5f5f5 !important;
+  color: #1976d2;
+}
+
+.total-cell-full {
+  background: #e3f2fd;
+  color: #1565c0;
+  font-size: 15px;
 }
 </style>
