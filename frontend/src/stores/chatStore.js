@@ -8,6 +8,9 @@ const STORAGE_KEY_MESSAGES = 'quendoo-messages'
 const STORAGE_KEY_CURRENT_CONV = 'quendoo-current-conversation'
 
 export const useChatStore = defineStore('chat', () => {
+  // Get settings store reference at module level to avoid circular dependency issues
+  let settingsStore = null
+
   // State
   const conversations = ref(new Map())
   const currentConversationId = ref(null)
@@ -277,8 +280,10 @@ export const useChatStore = defineStore('chat', () => {
       isStreaming.value = true
       error.value = null
 
-      // Get Quendoo API key from settings
-      const settingsStore = useSettingsStore()
+      // Get Quendoo API key from settings (lazy initialize to avoid circular dependency)
+      if (!settingsStore) {
+        settingsStore = useSettingsStore()
+      }
       const quendooApiKey = settingsStore.quendooApiKey
 
       // Track tools being executed in real-time (use plain array instead of ref to avoid bundling issues)
