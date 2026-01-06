@@ -281,8 +281,8 @@ export const useChatStore = defineStore('chat', () => {
       const settingsStore = useSettingsStore()
       const quendooApiKey = settingsStore.quendooApiKey
 
-      // Track tools being executed in real-time
-      const toolsInProgress = ref([])
+      // Track tools being executed in real-time (use plain array instead of ref to avoid bundling issues)
+      const toolsInProgress = []
 
       // Create a temporary assistant message that will be updated in real-time
       const tempMessageId = `msg_${Date.now()}_temp`
@@ -291,7 +291,7 @@ export const useChatStore = defineStore('chat', () => {
         role: 'assistant',
         content: '',  // Will be filled when complete
         timestamp: new Date().toISOString(),
-        toolsUsed: toolsInProgress.value,
+        toolsUsed: toolsInProgress,
         isStreaming: true  // Mark as streaming
       })
 
