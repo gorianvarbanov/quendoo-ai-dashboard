@@ -110,9 +110,6 @@
 
 <script setup>
 import { computed } from 'vue'
-import * as dateFns from 'date-fns'
-
-const { format, parseISO } = dateFns
 
 const props = defineProps({
   modelValue: {
@@ -186,10 +183,13 @@ function close() {
   isOpen.value = false
 }
 
+// Simple date formatting without date-fns to avoid bundling issues
 function formatDate(dateStr) {
   if (!dateStr) return ''
   try {
-    return format(parseISO(dateStr), 'MMM dd, yyyy')
+    const date = new Date(dateStr)
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`
   } catch {
     return dateStr
   }
@@ -197,7 +197,8 @@ function formatDate(dateStr) {
 
 function getDayNumber(dateStr) {
   try {
-    return format(parseISO(dateStr), 'd')
+    const date = new Date(dateStr)
+    return date.getDate().toString()
   } catch {
     return ''
   }
@@ -205,7 +206,9 @@ function getDayNumber(dateStr) {
 
 function getWeekday(dateStr) {
   try {
-    return format(parseISO(dateStr), 'EEE')
+    const date = new Date(dateStr)
+    const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+    return weekdays[date.getDay()]
   } catch {
     return ''
   }
