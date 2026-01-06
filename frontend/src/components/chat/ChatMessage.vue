@@ -231,17 +231,6 @@
             </tbody>
           </table>
         </div>
-
-        <v-btn
-          variant="outlined"
-          size="small"
-          prepend-icon="mdi-calendar-eye"
-          color="primary"
-          class="mt-3"
-          @click="openAvailabilityPanel"
-        >
-          Виж пълен календар
-        </v-btn>
       </div>
 
       <!-- Bookings Summary Table (shown when bookings data is detected) -->
