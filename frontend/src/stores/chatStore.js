@@ -306,7 +306,7 @@ export const useChatStore = defineStore('chat', () => {
           // Real-time callback when a tool starts
           onToolStart: (toolName, toolParams) => {
             console.log(`[Chat Store] Tool started: ${toolName}`)
-            toolsInProgress.value.push({
+            toolsInProgress.push({
               name: toolName,
               params: toolParams,
               status: 'running'
@@ -316,7 +316,7 @@ export const useChatStore = defineStore('chat', () => {
             const msgs = messages.value.get(conversationId)
             const tempMsg = msgs.find(m => m.id === tempMessageId)
             if (tempMsg) {
-              tempMsg.toolsUsed = [...toolsInProgress.value]
+              tempMsg.toolsUsed = [...toolsInProgress]
             }
             saveToStorage()
           },
@@ -326,7 +326,7 @@ export const useChatStore = defineStore('chat', () => {
             console.log(`[Chat Store] Tool completed: ${tool.name} (${tool.duration}ms)`)
 
             // Find and update the tool in progress
-            const toolInProgress = toolsInProgress.value.find(t => t.name === tool.name && t.status === 'running')
+            const toolInProgress = toolsInProgress.find(t => t.name === tool.name && t.status === 'running')
             if (toolInProgress) {
               toolInProgress.status = 'completed'
               toolInProgress.duration = tool.duration
@@ -336,7 +336,7 @@ export const useChatStore = defineStore('chat', () => {
             const msgs = messages.value.get(conversationId)
             const tempMsg = msgs.find(m => m.id === tempMessageId)
             if (tempMsg) {
-              tempMsg.toolsUsed = [...toolsInProgress.value]
+              tempMsg.toolsUsed = [...toolsInProgress]
             }
             saveToStorage()
           },
