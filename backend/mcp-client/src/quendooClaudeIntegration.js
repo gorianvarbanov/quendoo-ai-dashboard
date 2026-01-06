@@ -694,13 +694,13 @@ export class QuendooClaudeIntegration {
 
       while (loopCount < maxLoops) {
         loopCount++;
-        console.log(`[Quendoo] Loop iteration ${loopCount}/${maxLoops}`);
+        console.log(`[Quendoo Streaming] Loop iteration ${loopCount}/${maxLoops}, tools executed so far: ${toolsUsedInfo.length}`);
 
         // Call Claude with tools
         const response = await this.anthropic.messages.create(requestParams);
         finalResponse = response;
 
-        console.log(`[Quendoo] Response stop_reason: ${response.stop_reason}`);
+        console.log(`[Quendoo Streaming] Response stop_reason: ${response.stop_reason}, content blocks: ${response.content.length}`);
 
         // Add Claude's response to history
         history.push({
@@ -832,6 +832,11 @@ export class QuendooClaudeIntegration {
 
         // No more tools to execute, exit loop
         break;
+      }
+
+      // Check if we hit max loops
+      if (loopCount >= maxLoops) {
+        console.warn(`[Quendoo Streaming] WARNING: Reached maximum loop count (${maxLoops}). Forcing completion.`);
       }
 
       // Extract final content
