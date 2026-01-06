@@ -16,15 +16,8 @@ backend/mcp-client/.env
 backend/mcp-client/.env.local
 backend/mcp-client/npm-debug.log*
 
-# Backend - PHP
-backend/vendor/
-backend/storage/logs/*.log
-backend/storage/sessions/*
-backend/storage/cache/*
-!backend/storage/.gitkeep
-backend/.env
-backend/.env.local
-backend/composer.phar
+# Backend - PHP (DELETED - No longer used)
+# Old PHP backend has been removed, Node.js backend in backend/mcp-client/ is active
 
 # IDE
 .vscode/
@@ -55,3 +48,15 @@ logs/
 
 # Claude settings (contains API keys)
 .claude/settings.local.json
+
+# Python MCP Server
+mcp-quendoo-chatbot/__pycache__/
+mcp-quendoo-chatbot/**/__pycache__/
+mcp-quendoo-chatbot/*.pyc
+mcp-quendoo-chatbot/*.pyo
+mcp-quendoo-chatbot/*.db
+mcp-quendoo-chatbot/.env
+
+# Temporary/test files
+nul
+C:tempbackend-logs.json
