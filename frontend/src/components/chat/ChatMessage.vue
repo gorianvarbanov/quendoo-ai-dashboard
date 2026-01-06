@@ -204,6 +204,19 @@
         </v-btn>
       </div>
 
+      <!-- Availability Calendar Button (shown when get_availability tool used) -->
+      <div v-if="hasAvailability && !isUser && !isStreaming" class="availability-viewer-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-calendar-check"
+          color="success"
+          @click="openAvailabilityPanel"
+        >
+          View Availability Calendar
+        </v-btn>
+      </div>
+
       <div v-if="!isUser && !isStreaming && !isTyping" class="message-actions">
         <v-btn icon variant="text" size="x-small" title="Copy message" @click="copyMessage">
           <v-icon size="14">mdi-content-copy</v-icon>
@@ -265,7 +278,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['typing'])
+const emit = defineEmits(['typing', 'open-availability'])
 
 const isUser = computed(() => props.message.role === 'user')
 
@@ -417,6 +430,19 @@ const hasTable = computed(() => {
   return tablePattern.test(props.message.content)
 })
 
+// Detect if get_availability tool was used and has result data
+const hasAvailability = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+  return toolsUsed.value.some(tool => tool.name === 'get_availability' && tool.result)
+})
+
+// Get availability data from tools
+const availabilityData = computed(() => {
+  if (!hasAvailability.value) return null
+  const availabilityTool = toolsUsed.value.find(tool => tool.name === 'get_availability' && tool.result)
+  return availabilityTool ? availabilityTool.result : null
+})
+
 // Room gallery state
 const roomGalleryOpen = ref(false)
 
@@ -565,6 +591,11 @@ function openTableViewer() {
 function openRoomGallery() {
   roomGalleryOpen.value = true
   console.log('[ChatMessage] Opening room gallery with images:', roomImages.value)
+}
+
+function openAvailabilityPanel() {
+  console.log('[ChatMessage] Opening availability panel with data:', availabilityData.value)
+  emit('open-availability', availabilityData.value)
 }
 
 // Copy message content to clipboard

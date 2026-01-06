@@ -15,6 +15,7 @@
         :message="message"
         :is-streaming="message.isStreaming || false"
         @typing="scrollToBottom"
+        @open-availability="$emit('open-availability', $event)"
       />
 
       <!-- AI is thinking indicator (shown before first tool starts) -->

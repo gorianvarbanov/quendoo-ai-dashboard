@@ -169,6 +169,7 @@
         :is-streaming="isStreaming"
         :streaming-message="streamingMessage"
         class="message-list-area"
+        @open-availability="handleOpenAvailability"
       />
 
       <!-- Chat Input - Fixed at bottom -->
@@ -250,6 +251,12 @@
         </div>
       </div>
     </v-navigation-drawer>
+
+    <!-- Availability Panel -->
+    <AvailabilityPanel
+      v-model="availabilityPanelOpen"
+      :raw-data="availabilityData"
+    />
   </div>
 </template>
 
@@ -262,6 +269,7 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { chatApi } from '@/services/api'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
+import AvailabilityPanel from './AvailabilityPanel.vue'
 
 const router = useRouter()
 const theme = useTheme()
@@ -277,6 +285,10 @@ const settingsDrawer = ref(false)
 const quendooApiKey = ref(settingsStore.quendooApiKey)
 const savingSettings = ref(false)
 const settingsSaved = ref(false)
+
+// Availability panel state
+const availabilityPanelOpen = ref(false)
+const availabilityData = ref(null)
 
 // Save settings function
 const saveSettings = async () => {
@@ -384,6 +396,13 @@ async function handleSearch(query) {
       searching.value = false
     }
   }, 300)
+}
+
+// Availability panel handler
+function handleOpenAvailability(data) {
+  console.log('[ChatContainer] Opening availability panel with data:', data)
+  availabilityData.value = data
+  availabilityPanelOpen.value = true
 }
 
 </script>

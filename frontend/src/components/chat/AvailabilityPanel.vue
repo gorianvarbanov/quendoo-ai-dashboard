@@ -1,5 +1,6 @@
 <template>
   <v-navigation-drawer
+    v-if="props.modelValue"
     v-model="isOpen"
     location="right"
     temporary
@@ -133,21 +134,35 @@ const isOpen = computed({
 const availabilityData = computed(() => {
   if (!props.rawData) return null
 
-  try {
-    // Extract date range
-    const date_from = props.rawData.date_from
-    const date_to = props.rawData.date_to
+  console.log('[AvailabilityPanel] Raw data received:', JSON.stringify(props.rawData, null, 2))
 
-    // Get unique dates
+  try {
+    // Handle different possible data structures
+    let actualData = props.rawData
+
+    // If data is nested in a 'data' or 'result' property
+    if (props.rawData.data) {
+      actualData = props.rawData.data
+      console.log('[AvailabilityPanel] Found nested data:', JSON.stringify(actualData, null, 2))
+    } else if (props.rawData.result) {
+      actualData = props.rawData.result
+      console.log('[AvailabilityPanel] Found nested result:', JSON.stringify(actualData, null, 2))
+    }
+
+    const date_from = actualData.date_from
+    const date_to = actualData.date_to
+
     const datesSet = new Set()
     const roomsMap = new Map()
 
-    // Process availability data
-    if (props.rawData.availability && Array.isArray(props.rawData.availability)) {
-      props.rawData.availability.forEach(entry => {
+    // Check for availability array
+    const availabilityArray = actualData.availability || actualData.rooms || []
+    console.log('[AvailabilityPanel] Availability array length:', availabilityArray.length)
+
+    if (Array.isArray(availabilityArray) && availabilityArray.length > 0) {
+      availabilityArray.forEach(entry => {
         datesSet.add(entry.date)
 
-        // Group by room
         if (!roomsMap.has(entry.room_id)) {
           roomsMap.set(entry.room_id, {
             room_id: entry.room_id,
@@ -164,8 +179,9 @@ const availabilityData = computed(() => {
       })
     }
 
-    // Sort dates
     const sortedDates = Array.from(datesSet).sort()
+
+    console.log('[AvailabilityPanel] Parsed data - Days:', sortedDates.length, 'Rooms:', roomsMap.size)
 
     return {
       date_from,
@@ -183,7 +199,7 @@ function close() {
   isOpen.value = false
 }
 
-// Simple date formatting without date-fns to avoid bundling issues
+// Native JavaScript date formatting
 function formatDate(dateStr) {
   if (!dateStr) return ''
   try {
