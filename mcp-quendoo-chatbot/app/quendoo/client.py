@@ -55,7 +55,7 @@ class QuendooAPIClient:
             params = {}
         params["api_key"] = self.api_key
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.request(
                 method=method,
                 url=url,
