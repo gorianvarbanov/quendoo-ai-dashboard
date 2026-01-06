@@ -1,15 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { chatApi } from '../services/api'
-import { useSettingsStore } from './settingsStore'
 
 const STORAGE_KEY_CONVERSATIONS = 'quendoo-conversations'
 const STORAGE_KEY_MESSAGES = 'quendoo-messages'
 const STORAGE_KEY_CURRENT_CONV = 'quendoo-current-conversation'
 
 export const useChatStore = defineStore('chat', () => {
-  // Get settings store reference at module level to avoid circular dependency issues
-  let settingsStore = null
 
   // State
   const conversations = ref(new Map())
@@ -243,7 +240,7 @@ export const useChatStore = defineStore('chat', () => {
     saveToStorage()
   }
 
-  async function sendMessage(content, serverId = null) {
+  async function sendMessage(content, serverId = null, quendooApiKey = null) {
     if (!content.trim()) return
 
     try {
@@ -279,12 +276,6 @@ export const useChatStore = defineStore('chat', () => {
       isLoading.value = true
       isStreaming.value = true
       error.value = null
-
-      // Get Quendoo API key from settings (lazy initialize to avoid circular dependency)
-      if (!settingsStore) {
-        settingsStore = useSettingsStore()
-      }
-      const quendooApiKey = settingsStore.quendooApiKey
 
       // Track tools being executed in real-time (use plain array instead of ref to avoid bundling issues)
       const toolsInProgress = []

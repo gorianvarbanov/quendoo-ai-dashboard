@@ -362,7 +362,7 @@ const recentConversations = computed(() => {
 
 // Methods
 function handleSendMessage(content) {
-  chatStore.sendMessage(content)
+  chatStore.sendMessage(content, null, settingsStore.quendooApiKey)
 }
 
 async function handleNewConversation() {
