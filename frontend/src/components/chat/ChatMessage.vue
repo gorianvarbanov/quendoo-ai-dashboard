@@ -191,37 +191,45 @@
         </div>
       </div>
 
-      <!-- Availability Summary (shown when availability data is detected) -->
+      <!-- Availability Summary Table (shown when availability data is detected) -->
       <div v-if="hasAvailability && availabilitySummary && !isUser && !isStreaming" class="availability-summary">
         <div class="availability-header">
-          <v-icon size="18" color="primary" class="mr-2">mdi-calendar-check</v-icon>
-          <span class="availability-title">Availability Summary</span>
-          <v-chip size="x-small" color="primary" variant="tonal" class="ml-2">
-            {{ availabilitySummary.date_from }} - {{ availabilitySummary.date_to }}
-          </v-chip>
+          <v-icon size="18" color="primary" class="mr-2">mdi-chart-bar</v-icon>
+          <span class="availability-title">Наличности за {{ formatMonthYear(availabilitySummary.date_from) }}</span>
         </div>
 
-        <div class="availability-rooms">
-          <div
-            v-for="room in availabilitySummary.rooms"
-            :key="room.room_id"
-            class="availability-room-card"
-          >
-            <div class="room-card-header">
-              <v-icon size="16" color="purple">mdi-bed</v-icon>
-              <span class="room-card-name">{{ room.room_name }}</span>
-            </div>
-            <div class="room-card-stats">
-              <div class="room-stat">
-                <span class="stat-label">Total Available:</span>
-                <span class="stat-value">{{ room.total_qty }} rooms</span>
-              </div>
-              <div class="room-stat">
-                <span class="stat-label">Active Days:</span>
-                <span class="stat-value">{{ room.active_days }} / {{ availabilitySummary.total_days }}</span>
-              </div>
-            </div>
-          </div>
+        <div class="availability-table-wrapper">
+          <table class="availability-table">
+            <thead>
+              <tr>
+                <th class="table-header-cell">Дата</th>
+                <th
+                  v-for="room in availabilitySummary.rooms"
+                  :key="room.room_id"
+                  class="table-header-cell room-header"
+                >
+                  {{ room.room_name }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(dateRange, index) in getDateRangesForTable(availabilitySummary.rooms)"
+                :key="index"
+                class="table-row"
+              >
+                <td class="table-cell date-cell">{{ dateRange.dateLabel }}</td>
+                <td
+                  v-for="room in availabilitySummary.rooms"
+                  :key="room.room_id"
+                  class="table-cell qty-cell"
+                  :class="getQtyCellClass(dateRange.dateRange, room)"
+                >
+                  {{ getQtyForDateRange(dateRange.dateRange, room) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <v-btn
@@ -232,7 +240,7 @@
           class="mt-3"
           @click="openAvailabilityPanel"
         >
-          View Full Calendar
+          Виж пълен календар
         </v-btn>
       </div>
 
@@ -298,7 +306,7 @@
     <!-- Availability Panel Component -->
     <AvailabilityPanel
       v-model="availabilityPanelOpen"
-      :raw-data="availabilityToolData"
+      :raw-data="availabilityData"
     />
   </div>
 </template>
@@ -675,81 +683,134 @@ async function copyMessage() {
   }
 }
 
-// Availability Panel state and data
-const availabilityPanelOpen = ref(false)
+// Helper function to format month and year
+function formatMonthYear(dateStr) {
+  if (!dateStr) return ''
+  try {
+    const date = new Date(dateStr)
+    const months = ['януари', 'февруари', 'март', 'април', 'май', 'юни', 'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
+    return `${months[date.getMonth()]} ${date.getFullYear()} г.`
+  } catch {
+    return dateStr
+  }
+}
 
-// Detect if message has availability data from get_availability tool
-const hasAvailability = computed(() => {
-  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
-
-  return toolsUsed.value.some(tool =>
-    tool.name === 'get_availability' && tool.result
-  )
-})
-
-// Extract availability data from tool results
-const availabilityToolData = computed(() => {
-  if (!hasAvailability.value) return null
-
-  const availabilityTool = toolsUsed.value.find(tool => tool.name === 'get_availability')
-  if (!availabilityTool || !availabilityTool.result) return null
+// Helper function to format date range for table row
+function formatDateRangeLabel(dateFrom, dateTo) {
+  if (!dateFrom || !dateTo) return ''
 
   try {
-    // Parse result if it's a string
-    const result = typeof availabilityTool.result === 'string'
-      ? JSON.parse(availabilityTool.result)
-      : availabilityTool.result
+    const from = new Date(dateFrom)
+    const to = new Date(dateTo)
 
-    console.log('[ChatMessage] Parsed availability data:', result)
-    return result
-  } catch (error) {
-    console.error('[ChatMessage] Failed to parse availability data:', error)
-    return null
+    const fromDay = from.getDate()
+    const toDay = to.getDate()
+
+    const months = ['януари', 'февруари', 'март', 'април', 'май', 'юни', 'юли', 'август', 'септември', 'октомври', 'ноември', 'декември']
+    const monthName = months[from.getMonth()]
+
+    if (fromDay === toDay) {
+      return `${fromDay} ${monthName}`
+    } else {
+      return `${fromDay}–${toDay} ${monthName}`
+    }
+  } catch {
+    return `${dateFrom} - ${dateTo}`
   }
-})
+}
 
-// Create summary data for in-chat display
+// Get all unique date ranges from all rooms
+function getDateRangesForTable(rooms) {
+  if (!rooms || rooms.length === 0) return []
+
+  const allRanges = new Set()
+  rooms.forEach(room => {
+    room.dateRanges.forEach(range => {
+      allRanges.add(`${range.date_from}|${range.date_to}`)
+    })
+  })
+
+  const sortedRanges = Array.from(allRanges).sort((a, b) => {
+    const [aFrom] = a.split('|')
+    const [bFrom] = b.split('|')
+    return aFrom.localeCompare(bFrom)
+  })
+
+  return sortedRanges.map(rangeKey => {
+    const [date_from, date_to] = rangeKey.split('|')
+    return {
+      dateRange: { date_from, date_to },
+      dateLabel: formatDateRangeLabel(date_from, date_to)
+    }
+  })
+}
+
+// Get quantity for specific date range and room
+function getQtyForDateRange(dateRange, room) {
+  if (!room || !room.dateRanges) return 0
+
+  const match = room.dateRanges.find(range =>
+    range.date_from === dateRange.date_from && range.date_to === dateRange.date_to
+  )
+
+  return match ? match.qty : 0
+}
+
+// Get CSS class for quantity cell
+function getQtyCellClass(dateRange, room) {
+  const qty = getQtyForDateRange(dateRange, room)
+  if (qty === 0) return 'qty-zero'
+  if (qty < 3) return 'qty-low'
+  return 'qty-normal'
+}
+
+// Create summary data for in-chat display with date ranges
 const availabilitySummary = computed(() => {
-  if (!availabilityToolData.value) return null
+  if (!availabilityData.value) return null
 
-  const data = availabilityToolData.value
+  const data = availabilityData.value
   if (!data.availability || !Array.isArray(data.availability)) return null
 
-  // Group by room and calculate totals
+  // Group by room and date range
   const roomsMap = new Map()
-  const datesSet = new Set()
 
-  data.availability.forEach(entry => {
-    datesSet.add(entry.date)
+  // Sort entries by date and room
+  const sortedEntries = [...data.availability].sort((a, b) => {
+    const roomCompare = (a.room_name || '').localeCompare(b.room_name || '')
+    if (roomCompare !== 0) return roomCompare
+    return a.date.localeCompare(b.date)
+  })
 
+  sortedEntries.forEach(entry => {
     if (!roomsMap.has(entry.room_id)) {
       roomsMap.set(entry.room_id, {
         room_id: entry.room_id,
         room_name: entry.room_name || `Room ${entry.room_id}`,
-        total_qty: 0,
-        active_days: 0
+        dateRanges: []
       })
     }
 
     const room = roomsMap.get(entry.room_id)
-    if (entry.is_opened) {
-      room.total_qty += entry.qty || 0
-      room.active_days++
+    const lastRange = room.dateRanges[room.dateRanges.length - 1]
+
+    // Group consecutive dates with same quantity
+    if (lastRange && lastRange.qty === entry.qty && entry.is_opened) {
+      lastRange.date_to = entry.date
+    } else if (entry.is_opened && entry.qty > 0) {
+      room.dateRanges.push({
+        date_from: entry.date,
+        date_to: entry.date,
+        qty: entry.qty
+      })
     }
   })
 
   return {
     date_from: data.date_from,
     date_to: data.date_to,
-    total_days: datesSet.size,
-    rooms: Array.from(roomsMap.values())
+    rooms: Array.from(roomsMap.values()).filter(room => room.dateRanges.length > 0)
   }
 })
-
-function openAvailabilityPanel() {
-  availabilityPanelOpen.value = true
-  console.log('[ChatMessage] Opening availability panel with data:', availabilityToolData.value)
-}
 
 // Format content with Markdown support
 const formattedContent = computed(() => {
@@ -1811,51 +1872,90 @@ const formattedContent = computed(() => {
   color: rgb(var(--v-theme-on-surface));
 }
 
-.availability-rooms {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
+.availability-table-wrapper {
+  overflow-x: auto;
+  margin-top: 12px;
+  margin-bottom: 12px;
 }
 
-.availability-room-card {
-  padding: 12px;
+.availability-table {
+  width: 100%;
+  border-collapse: collapse;
   background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
-.room-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+.availability-table thead {
+  background: rgba(var(--v-theme-primary), 0.08);
 }
 
-.room-card-name {
+.table-header-cell {
+  padding: 10px 14px;
+  text-align: left;
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   color: rgb(var(--v-theme-on-surface));
+  border-bottom: 2px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.room-card-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.table-header-cell:last-child {
+  border-right: none;
 }
 
-.room-stat {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.85rem;
+.room-header {
+  text-align: center;
+  min-width: 120px;
 }
 
-.stat-label {
-  color: rgba(var(--v-theme-on-surface), 0.7);
+.table-row {
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
-.stat-value {
+.table-row:last-child {
+  border-bottom: none;
+}
+
+.table-row:hover {
+  background: rgba(var(--v-theme-primary), 0.03);
+}
+
+.table-cell {
+  padding: 10px 14px;
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
+  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.table-cell:last-child {
+  border-right: none;
+}
+
+.date-cell {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.qty-cell {
+  text-align: center;
   font-weight: 600;
-  color: rgb(var(--v-theme-primary));
+  font-size: 0.95rem;
+}
+
+.qty-normal {
+  background: rgba(var(--v-theme-success), 0.08);
+  color: rgb(var(--v-theme-success));
+}
+
+.qty-low {
+  background: rgba(var(--v-theme-warning), 0.12);
+  color: rgb(var(--v-theme-warning));
+}
+
+.qty-zero {
+  background: rgba(var(--v-theme-error), 0.08);
+  color: rgba(var(--v-theme-on-surface), 0.4);
 }
 </style>
