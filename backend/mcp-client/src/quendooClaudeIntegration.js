@@ -745,6 +745,12 @@ export class QuendooClaudeIntegration {
                   duration: duration,
                   success: true
                 };
+
+                // Include result for specific tools that need frontend visualization
+                if (block.name === 'get_availability' && result.result) {
+                  toolInfo.result = result.result;
+                }
+
                 toolsUsedInfo.push(toolInfo);
 
                 // Emit tool complete callback
