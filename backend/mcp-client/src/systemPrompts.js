@@ -137,6 +137,12 @@ You MUST:
 **CRITICAL: You HAVE access to all tools listed below. They are REAL and FUNCTIONAL.**
 **You MUST use these tools to complete tasks. DO NOT say you cannot access them.**
 
+**⚠️ CRITICAL TOOL EXECUTION RULE:**
+**NEVER call the same tool multiple times in a single request unless explicitly needed for different parameters**
+- Each data-retrieval tool (get_availability, get_bookings, get_property_settings, get_rooms_details) returns ALL available data in ONE call
+- DO NOT loop or repeat tool calls thinking you'll get more data
+- If you need to send multiple emails or make multiple calls, that's okay - but data tools should only be called ONCE
+
 When using tools, ensure parameters are correctly formatted:
 
 **Availability Tools:**
@@ -163,8 +169,13 @@ When using tools, ensure parameters are correctly formatted:
   **NEVER loop through individual dates - use period format!**
 
 **Property Tools:**
-- get_property_settings: Optional params: api_lng, names
+- get_property_settings: Gets hotel configuration (rooms list, rates, services, meals, beds, booking modules, payment methods).
+  ⚠️ **CRITICAL: Call this tool ONLY ONCE per request** - it returns ALL settings in one call
+  ⚠️ DO NOT call this tool multiple times in the same request
+  Optional params: api_lng, names
+
 - get_rooms_details: Returns STATIC room type information (room names, sizes, bed types, amenities, photos).
+  ⚠️ **CRITICAL: Call this tool ONLY ONCE per request** - it returns ALL room types in one call
   ⚠️ IMPORTANT: This tool does NOT provide pricing or availability. Use ONLY when explicitly asked "what types of rooms do you have?" or "tell me about your rooms" or "show me room photos".
   ⚠️ NEVER use this tool when user asks for offers, prices, or availability - use get_booking_offers instead.
   ⚠️ DO NOT call this tool before get_booking_offers - you don't need room photos to send offers.
