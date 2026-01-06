@@ -407,6 +407,69 @@
         </div>
       </div>
 
+      <!-- Booking Offers Display (shown when get_booking_offers tool used) -->
+      <div v-if="hasBookingOffers && bookingOffersData && !isUser && !isStreaming" class="booking-offers-display">
+        <div class="booking-offers-header">
+          <v-icon size="18" color="primary" class="mr-2">mdi-tag-multiple</v-icon>
+          <span class="booking-offers-title">Налични оферти</span>
+        </div>
+
+        <div v-if="bookingOffersData.data && bookingOffersData.data.length > 0" class="offers-grid">
+          <div
+            v-for="(offer, index) in bookingOffersData.data"
+            :key="index"
+            class="offer-card"
+          >
+            <!-- Offer Info -->
+            <div class="offer-info-container">
+              <h3 class="offer-room-name">{{ index + 1 }}. {{ offer.room_name || offer.name }}</h3>
+              <div class="offer-rate-name">{{ offer.rate_name || 'Стандартна тарифа' }}</div>
+
+              <!-- Price Section -->
+              <div class="offer-price-section">
+                <div class="offer-total-price">
+                  {{ offer.total_price || offer.price }} {{ offer.currency || 'лв' }}
+                </div>
+                <div v-if="offer.price_per_night" class="offer-price-per-night">
+                  ({{ offer.price_per_night }} {{ offer.currency || 'лв' }}/нощ)
+                </div>
+              </div>
+
+              <!-- Offer Details -->
+              <div class="offer-details">
+                <div v-if="offer.available_rooms" class="offer-detail-item">
+                  <v-icon size="16" color="success">mdi-check-circle</v-icon>
+                  <span>Налични стаи: {{ offer.available_rooms }}</span>
+                </div>
+                <div v-if="offer.meals_included" class="offer-detail-item">
+                  <v-icon size="16" color="grey-darken-1">mdi-silverware-fork-knife</v-icon>
+                  <span>{{ offer.meals_included }}</span>
+                </div>
+                <div v-if="offer.cancellation_policy" class="offer-detail-item">
+                  <v-icon size="16" color="grey-darken-1">mdi-information</v-icon>
+                  <span>{{ offer.cancellation_policy }}</span>
+                </div>
+              </div>
+
+              <!-- Book Button -->
+              <v-btn
+                size="small"
+                color="primary"
+                variant="flat"
+                prepend-icon="mdi-calendar-check"
+                class="mt-2"
+              >
+                Резервирай
+              </v-btn>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="no-offers-message">
+          Няма налични оферти за избрания период.
+        </div>
+      </div>
+
       <!-- Table Viewer Button (shown when tables detected and typing is complete) -->
       <div v-if="hasTable && !isUser && !isStreaming && !isTyping" class="table-viewer-button">
         <v-btn
@@ -735,10 +798,42 @@ const bookingsData = computed(() => {
 })
 
 // Helper function to unwrap MCP protocol result format
-// MCP wraps all results in { result: {...} } format, but we need direct access
+// MCP wraps all results in nested format: { result: { result: { data: {...} } } }
+// Also handles JavaScript Proxy objects
 function unwrapMCPResult(toolResult) {
   if (!toolResult) return null
-  return toolResult.result || toolResult
+
+  console.log('[unwrapMCPResult] Input:', toolResult)
+  console.log('[unwrapMCPResult] Input type:', typeof toolResult)
+  console.log('[unwrapMCPResult] Input is Proxy:', toolResult.constructor?.name === 'Object')
+
+  // Handle Proxy objects by converting to plain object
+  let unwrapped = toolResult
+
+  // Try to access result property - may be wrapped multiple times
+  // Level 1: toolResult.result
+  if (unwrapped && typeof unwrapped === 'object' && 'result' in unwrapped) {
+    unwrapped = unwrapped.result
+    console.log('[unwrapMCPResult] After first unwrap:', unwrapped)
+  }
+
+  // Level 2: result.result (nested MCP wrapping)
+  if (unwrapped && typeof unwrapped === 'object' && 'result' in unwrapped) {
+    unwrapped = unwrapped.result
+    console.log('[unwrapMCPResult] After second unwrap:', unwrapped)
+  }
+
+  // Level 3: Check if there's a data property (Quendoo API format)
+  if (unwrapped && typeof unwrapped === 'object' && 'data' in unwrapped) {
+    console.log('[unwrapMCPResult] Found data property, keeping parent object with data')
+    // Keep the parent object that contains data property
+  }
+
+  console.log('[unwrapMCPResult] Final result:', unwrapped)
+  console.log('[unwrapMCPResult] Final result type:', typeof unwrapped)
+  console.log('[unwrapMCPResult] Final result keys:', unwrapped ? Object.keys(unwrapped) : 'null')
+
+  return unwrapped
 }
 
 // Detect if get_rooms_details tool was used
@@ -2442,6 +2537,105 @@ const formattedContent = computed(() => {
 .bookings-footer {
   margin-top: 8px;
   text-align: center;
+}
+
+/* Booking Offers Display Styles */
+.booking-offers-display {
+  margin: 16px 0;
+  padding: 16px;
+  background: rgb(var(--v-theme-surface));
+  border-radius: 12px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.booking-offers-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.booking-offers-title {
+  font-weight: 600;
+  font-size: 1rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.offers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.offer-card {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-primary), 0.3);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: all 0.2s;
+}
+
+.offer-card:hover {
+  box-shadow: 0 4px 12px rgba(var(--v-theme-primary), 0.2);
+  border-color: rgba(var(--v-theme-primary), 0.5);
+}
+
+.offer-info-container {
+  padding: 16px;
+}
+
+.offer-room-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.offer-rate-name {
+  font-size: 0.85rem;
+  color: rgb(var(--v-theme-primary));
+  margin-bottom: 12px;
+}
+
+.offer-price-section {
+  background: rgba(var(--v-theme-primary), 0.05);
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.offer-total-price {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-primary));
+  margin-bottom: 4px;
+}
+
+.offer-price-per-night {
+  font-size: 0.85rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+.offer-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.offer-detail-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: rgba(var(--v-theme-on-surface), 0.8);
+}
+
+.no-offers-message {
+  text-align: center;
+  padding: 24px;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  font-style: italic;
 }
 
 /* Room Details Display Styles */
