@@ -725,7 +725,7 @@ app.post('/chat/quendoo', async (req, res) => {
     // Get Quendoo MCP server URL from header, fallback to environment, then to default
     const quendooUrl = req.headers['x-mcp-server-url']
       || process.env.QUENDOO_MCP_URL
-      || 'https://quendoo-mcp-server-urxohjcmba-uc.a.run.app/sse';
+      || 'https://quendoo-mcp-server-4fa3yy3ovq-uc.a.run.app/sse';
 
     // === SECURITY: Use Immutable Server-Side System Prompt ===
     const finalSystemPrompt = getSystemPrompt();
