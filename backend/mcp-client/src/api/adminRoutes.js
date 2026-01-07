@@ -712,4 +712,61 @@ router.patch('/hotels/:hotelId/status', async (req, res) => {
   }
 });
 
+/**
+ * PATCH /admin/hotels/:hotelId/password
+ * Reset hotel password (admin only)
+ * Body: { newPassword }
+ */
+router.patch('/hotels/:hotelId/password', async (req, res) => {
+  try {
+    const { hotelId } = req.params;
+    const { newPassword } = req.body;
+
+    if (!newPassword || newPassword.length < 8) {
+      return res.status(400).json({
+        success: false,
+        error: 'New password is required and must be at least 8 characters'
+      });
+    }
+
+    const bcrypt = await import('bcrypt');
+    const { getFirestore } = await import('../db/firestore.js');
+    const db = await getFirestore();
+
+    // Check if hotel exists
+    const hotelDoc = await db.collection('hotels').doc(hotelId).get();
+    if (!hotelDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Hotel not found'
+      });
+    }
+
+    // Hash new password
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update password in Firestore
+    await db.collection('hotels').doc(hotelId).update({
+      passwordHash,
+      passwordUpdatedAt: new Date().toISOString(),
+      passwordUpdatedBy: 'admin',
+      updatedAt: new Date().toISOString()
+    });
+
+    console.log(`[Admin] Password reset for hotel: ${hotelId}`);
+
+    res.json({
+      success: true,
+      message: 'Hotel password updated successfully'
+    });
+  } catch (error) {
+    console.error('[Admin] Error resetting hotel password:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to reset hotel password',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 export default router;

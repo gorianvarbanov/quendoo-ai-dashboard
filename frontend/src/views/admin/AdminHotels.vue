@@ -184,6 +184,13 @@
                 View Details
               </v-list-item>
               <v-list-item
+                prepend-icon="mdi-lock-reset"
+                @click="openResetPasswordDialog(item)"
+              >
+                Reset Password
+              </v-list-item>
+              <v-divider />
+              <v-list-item
                 v-if="item.status === 'active'"
                 prepend-icon="mdi-pause-circle"
                 @click="confirmStatusChange(item, 'suspended')"
@@ -368,6 +375,91 @@
       </v-card>
     </v-dialog>
 
+    <!-- Reset Password Dialog -->
+    <v-dialog
+      v-model="passwordDialog"
+      max-width="500"
+    >
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon class="mr-2">mdi-lock-reset</v-icon>
+          <span>Reset Hotel Password</span>
+          <v-spacer />
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            @click="closePasswordDialog"
+          />
+        </v-card-title>
+
+        <v-divider />
+
+        <v-card-text class="pa-4">
+          <p class="mb-4">
+            Resetting password for: <strong>{{ pendingPasswordHotel?.hotelName }}</strong>
+          </p>
+
+          <v-text-field
+            v-model="newPassword"
+            label="New Password"
+            :type="showPassword ? 'text' : 'password'"
+            :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+            @click:append-inner="showPassword = !showPassword"
+            variant="outlined"
+            density="comfortable"
+            :rules="[
+              v => !!v || 'Password is required',
+              v => v.length >= 8 || 'Password must be at least 8 characters'
+            ]"
+            hint="Minimum 8 characters"
+            persistent-hint
+          />
+
+          <v-text-field
+            v-model="confirmPassword"
+            label="Confirm Password"
+            :type="showConfirmPassword ? 'text' : 'password'"
+            :append-inner-icon="showConfirmPassword ? 'mdi-eye-off' : 'mdi-eye'"
+            @click:append-inner="showConfirmPassword = !showConfirmPassword"
+            variant="outlined"
+            density="comfortable"
+            class="mt-4"
+            :rules="[
+              v => !!v || 'Please confirm password',
+              v => v === newPassword || 'Passwords do not match'
+            ]"
+          />
+
+          <v-alert
+            v-if="passwordError"
+            type="error"
+            variant="tonal"
+            class="mt-4"
+          >
+            {{ passwordError }}
+          </v-alert>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn
+            @click="closePasswordDialog"
+            variant="text"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            @click="resetPassword"
+            :loading="resettingPassword"
+            :disabled="!isPasswordValid"
+          >
+            Reset Password
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Snackbar for notifications -->
     <v-snackbar
       v-model="snackbar.show"
@@ -386,13 +478,21 @@ import axios from 'axios'
 // State
 const loading = ref(false)
 const updating = ref(false)
+const resettingPassword = ref(false)
 const hotels = ref([])
 const search = ref('')
 const detailsDialog = ref(false)
 const confirmDialog = ref(false)
+const passwordDialog = ref(false)
 const selectedHotel = ref(null)
 const pendingHotel = ref(null)
+const pendingPasswordHotel = ref(null)
 const pendingAction = ref('')
+const newPassword = ref('')
+const confirmPassword = ref('')
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
+const passwordError = ref('')
 const snackbar = ref({
   show: false,
   message: '',
@@ -429,6 +529,12 @@ const stats = computed(() => {
   const totalMessages = hotels.value.reduce((sum, h) => sum + (h.usage?.messagesThisMonth || 0), 0)
 
   return { total, active, suspended, onTrial, totalMessages }
+})
+
+const isPasswordValid = computed(() => {
+  return newPassword.value.length >= 8 &&
+         confirmPassword.value.length >= 8 &&
+         newPassword.value === confirmPassword.value
 })
 
 // Methods
@@ -532,6 +638,57 @@ function showSnackbar(message, color = 'success') {
     show: true,
     message,
     color
+  }
+}
+
+function openResetPasswordDialog(hotel) {
+  pendingPasswordHotel.value = hotel
+  newPassword.value = ''
+  confirmPassword.value = ''
+  passwordError.value = ''
+  showPassword.value = false
+  showConfirmPassword.value = false
+  passwordDialog.value = true
+}
+
+function closePasswordDialog() {
+  passwordDialog.value = false
+  pendingPasswordHotel.value = null
+  newPassword.value = ''
+  confirmPassword.value = ''
+  passwordError.value = ''
+}
+
+async function resetPassword() {
+  if (!isPasswordValid.value) {
+    passwordError.value = 'Please enter a valid password'
+    return
+  }
+
+  resettingPassword.value = true
+  passwordError.value = ''
+
+  try {
+    const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3100'
+    const token = localStorage.getItem('quendoo-admin-token')
+
+    await axios.patch(
+      `${backendUrl}/admin/hotels/${pendingPasswordHotel.value.hotelId}/password`,
+      { newPassword: newPassword.value },
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    )
+
+    showSnackbar('Hotel password reset successfully', 'success')
+    closePasswordDialog()
+  } catch (error) {
+    console.error('[Admin Hotels] Error resetting password:', error)
+    passwordError.value = error.response?.data?.error || 'Failed to reset password'
+  } finally {
+    resettingPassword.value = false
   }
 }
 
