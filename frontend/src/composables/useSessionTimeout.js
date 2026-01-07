@@ -78,16 +78,20 @@ export function useSessionTimeout() {
    */
   async function refreshSession() {
     try {
+      console.log('[Session] Attempting to refresh session...')
       const hotelToken = localStorage.getItem('hotelToken')
       if (!hotelToken) {
+        console.error('[Session] No token found in localStorage')
         throw new Error('No token found')
       }
 
-      const { data } = await api.post('/api/hotels/refresh', {})
+      console.log('[Session] Making refresh request to /api/hotels/refresh')
+      const response = await api.post('/api/hotels/refresh', {})
+      console.log('[Session] Refresh response:', response)
 
-      if (data.success && data.hotelToken) {
+      if (response.data.success && response.data.hotelToken) {
         // Update token and timestamp
-        localStorage.setItem('hotelToken', data.hotelToken)
+        localStorage.setItem('hotelToken', response.data.hotelToken)
         localStorage.setItem('loginTimestamp', Date.now().toString())
 
         // Close warning modal
@@ -103,9 +107,17 @@ export function useSessionTimeout() {
         startWarningTimer()
 
         console.log('[Session] Session refreshed successfully')
+      } else {
+        console.error('[Session] Refresh response missing success or token')
+        throw new Error('Invalid refresh response')
       }
     } catch (error) {
       console.error('[Session] Failed to refresh session:', error)
+      console.error('[Session] Error details:', error.response?.data || error.message)
+
+      // Don't force logout on refresh error - just close the modal and let user try again
+      showWarning.value = false
+      alert('Неуспешно обновяване на сесията. Моля, влезте отново.')
       handleExpiry()
     }
   }
