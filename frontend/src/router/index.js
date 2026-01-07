@@ -11,9 +11,23 @@ const router = createRouter({
     {
       path: '/chat/:conversationId?',
       name: 'chat',
-      component: () => import('../views/ChatView.vue')
+      component: () => import('../views/ChatView.vue'),
+      beforeEnter: (to, from, next) => {
+        const hotelToken = localStorage.getItem('hotelToken')
+        if (!hotelToken) {
+          // No hotel token - redirect to login
+          next('/login')
+        } else {
+          next()
+        }
+      }
     },
-    // Hotel registration
+    // Hotel authentication
+    {
+      path: '/login',
+      name: 'hotel-login',
+      component: () => import('../views/HotelLoginView.vue')
+    },
     {
       path: '/register',
       name: 'hotel-registration',

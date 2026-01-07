@@ -67,6 +67,32 @@
                 class="mb-4"
                 prepend-inner-icon="mdi-map-marker"
               ></v-textarea>
+
+              <v-text-field
+                v-model="password"
+                label="Password"
+                :type="showPassword ? 'text' : 'password'"
+                :rules="[rules.required, rules.minLength(8)]"
+                variant="outlined"
+                class="mb-4"
+                prepend-inner-icon="mdi-lock"
+                :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+                @click:append-inner="showPassword = !showPassword"
+                hint="Minimum 8 characters"
+                persistent-hint
+              ></v-text-field>
+
+              <v-text-field
+                v-model="passwordConfirm"
+                label="Confirm Password"
+                :type="showPasswordConfirm ? 'text' : 'password'"
+                :rules="[rules.required, rules.passwordMatch]"
+                variant="outlined"
+                class="mb-4"
+                prepend-inner-icon="mdi-lock-check"
+                :append-inner-icon="showPasswordConfirm ? 'mdi-eye-off' : 'mdi-eye'"
+                @click:append-inner="showPasswordConfirm = !showPasswordConfirm"
+              ></v-text-field>
             </v-form>
           </v-window-item>
 
@@ -283,9 +309,13 @@ const hotelName = ref('');
 const contactEmail = ref('');
 const contactPhone = ref('');
 const address = ref('');
+const password = ref('');
+const passwordConfirm = ref('');
 const quendooApiKey = ref('');
 const termsAccepted = ref(false);
 const showApiKey = ref(false);
+const showPassword = ref(false);
+const showPasswordConfirm = ref(false);
 
 // UI state
 const loading = ref(false);
@@ -307,7 +337,8 @@ const rules = {
     const pattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return pattern.test(value) || 'Invalid email';
   },
-  minLength: (min) => value => value.length >= min || `Must be at least ${min} characters`
+  minLength: (min) => value => value.length >= min || `Must be at least ${min} characters`,
+  passwordMatch: value => value === password.value || 'Passwords do not match'
 };
 
 // Computed
@@ -341,6 +372,7 @@ const register = async () => {
       quendooApiKey: quendooApiKey.value,
       hotelName: hotelName.value,
       contactEmail: contactEmail.value,
+      password: password.value,
       contactPhone: contactPhone.value,
       address: address.value
     });

@@ -60,3 +60,7 @@ mcp-quendoo-chatbot/.env
 # Temporary/test files
 nul
 C:tempbackend-logs.json
+
+# Test files with API keys
+test-rooms-details.js
+test-hotel-registration.html

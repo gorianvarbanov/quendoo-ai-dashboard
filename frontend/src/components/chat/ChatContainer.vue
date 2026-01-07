@@ -208,46 +208,76 @@
         <v-divider class="mb-4" />
 
         <div class="settings-body">
-          <!-- Quendoo API Key -->
+          <!-- Hotel Registration Status -->
           <div class="setting-section">
             <h3 class="setting-label">
               <v-icon size="20" class="mr-2">mdi-hotel</v-icon>
-              Quendoo API Key
+              Hotel Registration
             </h3>
-            <v-text-field
-              v-model="quendooApiKey"
-              type="password"
-              variant="outlined"
-              density="comfortable"
-              placeholder="Your Quendoo API key"
-              hint="Your Quendoo PMS API key for hotel operations"
-              persistent-hint
+
+            <v-alert
+              v-if="!isHotelRegistered"
+              type="info"
+              variant="tonal"
               class="mb-4"
-            />
+            >
+              <div class="text-subtitle-2 mb-2">Registration Required</div>
+              <div class="text-body-2">
+                To use the Quendoo AI chatbot, you need to register your hotel with your Quendoo API key.
+              </div>
+            </v-alert>
+
+            <v-alert
+              v-else
+              type="success"
+              variant="tonal"
+              class="mb-4"
+            >
+              <div class="text-subtitle-2 mb-2">Hotel Registered</div>
+              <div class="text-body-2">
+                Your hotel is successfully registered and ready to use the AI assistant.
+              </div>
+            </v-alert>
+
+            <div v-if="isHotelRegistered" class="hotel-info mb-4">
+              <div class="info-row">
+                <span class="info-label">Hotel ID:</span>
+                <span class="info-value">{{ hotelId }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Hotel Name:</span>
+                <span class="info-value">{{ hotelName }}</span>
+              </div>
+            </div>
+
+            <v-btn
+              v-if="!isHotelRegistered"
+              color="primary"
+              block
+              size="large"
+              @click="goToRegistration"
+              prepend-icon="mdi-plus-circle"
+            >
+              Register Hotel
+            </v-btn>
+
+            <v-btn
+              v-else
+              color="error"
+              variant="outlined"
+              block
+              size="large"
+              @click="handleLogout"
+              prepend-icon="mdi-logout"
+            >
+              Logout
+            </v-btn>
+
+            <div v-if="!isHotelRegistered" class="info-text">
+              <v-icon size="small" class="mr-1">mdi-information</v-icon>
+              Your Quendoo API key is encrypted and stored securely. It is never exposed in your browser.
+            </div>
           </div>
-
-          <!-- Save Button -->
-          <v-btn
-            color="primary"
-            block
-            size="large"
-            @click="saveSettings"
-            :loading="savingSettings"
-          >
-            Save Settings
-          </v-btn>
-
-          <!-- Success Message -->
-          <v-alert
-            v-if="settingsSaved"
-            type="success"
-            density="compact"
-            class="mt-4"
-            closable
-            @click:close="settingsSaved = false"
-          >
-            Settings saved successfully!
-          </v-alert>
         </div>
       </div>
     </v-navigation-drawer>
@@ -282,28 +312,37 @@ const sidebarOpen = ref(window.innerWidth > 1024)
 
 // Settings drawer state
 const settingsDrawer = ref(false)
-const quendooApiKey = ref(settingsStore.quendooApiKey)
-const savingSettings = ref(false)
-const settingsSaved = ref(false)
+
+// Hotel registration state
+const hotelToken = ref(localStorage.getItem('hotelToken'))
+const hotelId = ref(localStorage.getItem('hotelId'))
+const hotelName = ref(localStorage.getItem('hotelName'))
 
 // Availability panel state
 const availabilityPanelOpen = ref(false)
 const availabilityData = ref(null)
 
-// Save settings function
-const saveSettings = async () => {
-  savingSettings.value = true
-  try {
-    settingsStore.updateQuendooApiKey(quendooApiKey.value)
-    settingsSaved.value = true
-    setTimeout(() => {
-      settingsSaved.value = false
-    }, 3000)
-  } catch (error) {
-    console.error('[Settings] Failed to save:', error)
-  } finally {
-    savingSettings.value = false
-  }
+// Computed
+const isHotelRegistered = computed(() => {
+  return !!hotelToken.value && !!hotelId.value
+})
+
+// Navigation
+const goToRegistration = () => {
+  router.push('/register')
+}
+
+const handleLogout = () => {
+  // Clear hotel authentication data
+  localStorage.removeItem('hotelToken')
+  localStorage.removeItem('hotelId')
+  localStorage.removeItem('hotelName')
+  localStorage.removeItem('hotelEmail')
+
+  console.log('[ChatContainer] Hotel logged out, redirecting to login')
+
+  // Redirect to login page
+  router.push('/login')
 }
 
 // Search state
@@ -727,5 +766,47 @@ function handleOpenAvailability(data) {
   margin-bottom: 12px;
   display: flex;
   align-items: center;
+}
+
+.hotel-info {
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.875rem;
+}
+
+.info-value {
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.info-text {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  border-radius: 8px;
+  font-size: 0.75rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  line-height: 1.4;
 }
 </style>

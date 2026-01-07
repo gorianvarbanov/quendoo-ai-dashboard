@@ -15,6 +15,76 @@
         </div>
 
         <div class="settings-content">
+        <!-- Hotel Registration Status -->
+        <div class="settings-card">
+          <div class="card-header">
+            <v-icon class="header-icon">mdi-hotel</v-icon>
+            <span class="header-title">Hotel Registration</span>
+          </div>
+          <div class="card-content">
+            <v-alert
+              v-if="!isHotelRegistered"
+              type="info"
+              variant="tonal"
+              class="mb-4"
+            >
+              <div class="text-subtitle-2 mb-2">Registration Required</div>
+              <div class="text-body-2">
+                To use the Quendoo AI chatbot, you need to register your hotel with your Quendoo API key.
+                This will enable secure access to your hotel data and reservation system.
+              </div>
+            </v-alert>
+
+            <v-alert
+              v-else
+              type="success"
+              variant="tonal"
+              class="mb-4"
+            >
+              <div class="text-subtitle-2 mb-2">Hotel Registered</div>
+              <div class="text-body-2">
+                Your hotel is successfully registered and ready to use the AI assistant.
+              </div>
+            </v-alert>
+
+            <div v-if="isHotelRegistered" class="hotel-info mb-4">
+              <div class="info-row">
+                <span class="info-label">Hotel ID:</span>
+                <span class="info-value font-mono">{{ hotelId }}</span>
+              </div>
+              <div class="info-row">
+                <span class="info-label">Hotel Name:</span>
+                <span class="info-value">{{ hotelName }}</span>
+              </div>
+            </div>
+
+            <v-btn
+              v-if="!isHotelRegistered"
+              color="primary"
+              @click="goToRegistration"
+              prepend-icon="mdi-plus-circle"
+            >
+              Register Hotel
+            </v-btn>
+
+            <v-btn
+              v-else
+              color="error"
+              variant="outlined"
+              @click="handleLogout"
+              prepend-icon="mdi-logout"
+            >
+              Logout
+            </v-btn>
+
+            <div v-if="!isHotelRegistered" class="info-text">
+              <v-icon size="small" class="mr-1">mdi-information</v-icon>
+              Your Quendoo API key is encrypted and stored securely in Google Cloud Secret Manager.
+              It is never exposed in your browser or sent to the frontend.
+            </div>
+          </div>
+        </div>
+
         <!-- Claude API Configuration -->
         <div class="settings-card">
           <div class="card-header">
@@ -63,22 +133,6 @@
               </template>
             </v-text-field>
 
-            <v-text-field
-              v-model="quendooApiKey"
-              label="Quendoo API Key"
-              type="password"
-              hint="Enter your Quendoo PMS API key for hotel operations"
-              persistent-hint
-              class="mb-4 api-key-field"
-              density="comfortable"
-              placeholder="Your Quendoo API key"
-              autocomplete="off"
-            >
-              <template v-slot:prepend>
-                <v-icon>mdi-hotel</v-icon>
-              </template>
-            </v-text-field>
-
             <v-alert
               v-if="apiKeyError"
               type="error"
@@ -97,7 +151,7 @@
                 :disabled="!apiKey || !isValidApiKey"
               >
                 <v-icon left>mdi-content-save</v-icon>
-                Save API Keys
+                Save API Key
               </v-btn>
 
               <v-btn
@@ -465,6 +519,7 @@
             <li>Clear your Anthropic API key</li>
             <li>Reset MCP client URL</li>
             <li>Reset MCP server URL</li>
+            <li>Reset system prompt</li>
             <li>Reset appearance preferences</li>
             <li>Clear all stored settings</li>
           </ul>
@@ -500,13 +555,17 @@ const settingsStore = useSettingsStore()
 
 // Local state
 const apiKey = ref(settingsStore.anthropicApiKey)
-const quendooApiKey = ref(settingsStore.quendooApiKey)
 const mcpClientUrl = ref(settingsStore.mcpClientUrl)
 const mcpServerUrl = ref(settingsStore.mcpServerUrl)
 const systemPromptText = ref(settingsStore.systemPrompt)
 const theme = ref(settingsStore.theme)
 const autoScroll = ref(settingsStore.autoScroll)
 const notifications = ref(settingsStore.notifications)
+
+// Hotel registration state
+const hotelToken = ref(localStorage.getItem('hotelToken'))
+const hotelId = ref(localStorage.getItem('hotelId'))
+const hotelName = ref(localStorage.getItem('hotelName'))
 
 const showApiKey = ref(false)
 const saving = ref(false)
@@ -527,6 +586,10 @@ const passwordChangeSuccess = ref(false)
 const passwordChangeError = ref('')
 
 // Computed
+const isHotelRegistered = computed(() => {
+  return !!hotelToken.value && !!hotelId.value
+})
+
 const isValidApiKey = computed(() => {
   return settingsStore.validateApiKey(apiKey.value)
 })
@@ -553,11 +616,10 @@ const saveApiKey = async () => {
   saving.value = true
   try {
     settingsStore.updateApiKey(apiKey.value)
-    settingsStore.updateQuendooApiKey(quendooApiKey.value)
-    successMessage.value = 'API keys saved successfully!'
+    successMessage.value = 'API key saved successfully!'
     showSuccess.value = true
   } catch (error) {
-    errorMessage.value = 'Failed to save API keys: ' + error.message
+    errorMessage.value = 'Failed to save API key: ' + error.message
     showError.value = true
   } finally {
     saving.value = false
@@ -717,6 +779,23 @@ const changePassword = async () => {
 const goBackToChat = () => {
   router.push('/')
 }
+
+const goToRegistration = () => {
+  router.push('/register')
+}
+
+const handleLogout = () => {
+  // Clear hotel authentication data
+  localStorage.removeItem('hotelToken')
+  localStorage.removeItem('hotelId')
+  localStorage.removeItem('hotelName')
+  localStorage.removeItem('hotelEmail')
+
+  console.log('[Settings] Hotel logged out, redirecting to login')
+
+  // Redirect to login page
+  router.push('/login')
+}
 </script>
 
 <style scoped>
@@ -839,6 +918,35 @@ const goBackToChat = () => {
 .font-mono {
   font-family: 'Courier New', monospace;
   font-size: 0.85em;
+}
+
+.hotel-info {
+  background: rgba(var(--v-theme-on-surface), 0.03);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-size: 0.875rem;
+}
+
+.info-value {
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
 }
 
 @media (max-width: 1024px) {
