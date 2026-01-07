@@ -5,29 +5,39 @@
 
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import { createOrUpdateSecret, getSecret } from '../secretManager.js';
 import { createHotelId } from '../utils/hashUtils.js';
 import { getFirestore } from '../db/firestore.js';
 import { logAudit, LOG_TYPES, LOG_ACTIONS } from '../db/auditService.js';
 import hotelStorage from '../db/hotelStorageInMemory.js';
+import logger from '../utils/logger.js';
+
+const SALT_ROUNDS = 10;
 
 const router = express.Router();
 
 // Check if Firestore is enabled
 const USE_FIRESTORE = process.env.USE_FIRESTORE !== 'false';
-console.log(`[Hotel Routes] Using ${USE_FIRESTORE ? 'Firestore' : 'In-Memory'} storage`);
+logger.info('Hotel Routes storage mode', {
+  storage: USE_FIRESTORE ? 'Firestore' : 'In-Memory'
+});
 
 /**
  * Register new hotel
  * POST /api/hotels/register
- * Body: { quendooApiKey: string, hotelName?: string, contactEmail?: string }
+ * Body: { quendooApiKey: string, hotelName?: string, contactEmail: string, password: string }
  * Returns: { success: true, hotelToken: JWT, hotelId, hotelName }
  */
 router.post('/register', async (req, res) => {
   try {
-    const { quendooApiKey, hotelName, contactEmail } = req.body;
+    const { quendooApiKey, hotelName, contactEmail, password } = req.body;
 
-    console.log('[Hotel Registration] Request received');
+    logger.info('Hotel registration request', {
+      requestId: req.requestId,
+      hotelName,
+      contactEmail
+    });
 
     // Validate API key format
     if (!quendooApiKey || typeof quendooApiKey !== 'string') {
@@ -39,15 +49,27 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Invalid Quendoo API key format' });
     }
 
+    // Validate email and password
+    if (!contactEmail || !contactEmail.includes('@')) {
+      return res.status(400).json({ error: 'Valid email is required' });
+    }
+
+    if (!password || password.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
     // Create hotel ID from API key hash
     const hotelId = createHotelId(quendooApiKey);
-    console.log(`[Hotel Registration] Generated hotelId: ${hotelId}`);
+    logger.debug('Generated hotel ID', { hotelId, requestId: req.requestId });
 
     // Check if hotel already registered
     const db = await getFirestore();
     const existingHotel = await db.collection('hotels').doc(hotelId).get();
     if (existingHotel.exists) {
-      console.log(`[Hotel Registration] Hotel already exists: ${hotelId}`);
+      logger.info('Hotel already registered, returning existing', {
+        hotelId,
+        requestId: req.requestId
+      });
 
       // Return existing hotel info with new token
       const hotelData = existingHotel.data();
@@ -75,24 +97,40 @@ router.post('/register', async (req, res) => {
 
     // Store encrypted API key in Secret Manager
     const secretName = `quendoo-api-key-${hotelId}`;
-    console.log(`[Hotel Registration] Storing API key in Secret Manager: ${secretName}`);
+    logger.info('Storing API key in Secret Manager', {
+      secretName,
+      hotelId,
+      requestId: req.requestId
+    });
 
     try {
       await createOrUpdateSecret(secretName, quendooApiKey);
-      console.log(`[Hotel Registration] API key stored successfully`);
+      logger.info('API key stored successfully', {
+        hotelId,
+        requestId: req.requestId
+      });
     } catch (secretError) {
-      console.error('[Hotel Registration] Failed to store API key:', secretError);
+      logger.error('Failed to store API key in Secret Manager', {
+        hotelId,
+        error: secretError.message,
+        requestId: req.requestId
+      });
       return res.status(500).json({
         error: 'Failed to securely store API key',
         details: process.env.NODE_ENV === 'development' ? secretError.message : undefined
       });
     }
 
+    // Hash password
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    logger.debug('Password hashed', { hotelId, requestId: req.requestId });
+
     // Store hotel metadata in Firestore
     const hotelData = {
       hotelId,
       hotelName: hotelName || 'Unknown Hotel',
-      contactEmail: contactEmail || null,
+      contactEmail,
+      passwordHash, // Store hashed password
       registeredAt: new Date().toISOString(),
       status: 'active',
       apiKeySecretName: secretName,
@@ -113,7 +151,11 @@ router.post('/register', async (req, res) => {
     };
 
     await db.collection('hotels').doc(hotelId).set(hotelData);
-    console.log(`[Hotel Registration] Hotel metadata stored in Firestore`);
+    logger.info('Hotel metadata stored in Firestore', {
+      hotelId,
+      hotelName,
+      requestId: req.requestId
+    });
 
     // Generate JWT token (valid for 30 days)
     const hotelToken = jwt.sign(
@@ -136,11 +178,20 @@ router.post('/register', async (req, res) => {
         userAgent: req.get('user-agent')
       });
     } catch (auditError) {
-      console.warn('[Hotel Registration] Failed to log audit:', auditError);
+      logger.warn('Failed to log audit trail', {
+        hotelId,
+        error: auditError.message,
+        requestId: req.requestId
+      });
       // Don't fail registration if audit logging fails
     }
 
-    console.log(`[Hotel Registration] Success! Hotel ${hotelId} registered`);
+    logger.info('Hotel registration successful', {
+      hotelId,
+      hotelName,
+      contactEmail,
+      requestId: req.requestId
+    });
 
     res.json({
       success: true,
@@ -152,9 +203,139 @@ router.post('/register', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[Hotel Registration] Error:', error);
+    logger.error('Hotel registration failed', {
+      error: error.message,
+      stack: error.stack,
+      requestId: req.requestId
+    });
     res.status(500).json({
       error: 'Registration failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * Login with email and password
+ * POST /api/hotels/login
+ * Body: { email: string, password: string }
+ * Returns: { success: true, hotelToken: JWT, hotelId, hotelName }
+ */
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    logger.info('Hotel login attempt', {
+      email,
+      requestId: req.requestId,
+      ip: req.ip
+    });
+
+    // Validate inputs
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // Find hotel by email
+    const db = await getFirestore();
+    const hotelsSnapshot = await db.collection('hotels')
+      .where('contactEmail', '==', email)
+      .limit(1)
+      .get();
+
+    if (hotelsSnapshot.empty) {
+      logger.warn('Login failed - hotel not found', {
+        email,
+        requestId: req.requestId,
+        ip: req.ip
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    const hotelDoc = hotelsSnapshot.docs[0];
+    const hotelData = hotelDoc.data();
+    const hotelId = hotelDoc.id;
+
+    // Check if hotel is active
+    if (hotelData.status !== 'active') {
+      logger.warn('Login failed - account suspended', {
+        hotelId,
+        email,
+        requestId: req.requestId
+      });
+      return res.status(403).json({
+        error: 'Account suspended',
+        code: 'ACCOUNT_SUSPENDED'
+      });
+    }
+
+    // Verify password
+    const passwordMatch = await bcrypt.compare(password, hotelData.passwordHash);
+
+    if (!passwordMatch) {
+      logger.warn('Login failed - invalid password', {
+        email,
+        hotelId,
+        requestId: req.requestId,
+        ip: req.ip
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Generate JWT token (valid for 30 days)
+    const hotelToken = jwt.sign(
+      {
+        hotelId,
+        type: 'hotel',
+        hotelName: hotelData.hotelName,
+        email: hotelData.contactEmail
+      },
+      process.env.JWT_SECRET || 'default-jwt-secret-change-in-production',
+      { expiresIn: '30d' }
+    );
+
+    // Log successful login
+    try {
+      await logAudit(LOG_TYPES.HOTEL, 'hotel_login', {
+        hotelId,
+        hotelName: hotelData.hotelName,
+        email,
+        ip: req.ip,
+        userAgent: req.get('user-agent')
+      });
+    } catch (auditError) {
+      logger.warn('Failed to log audit trail', {
+        hotelId,
+        error: auditError.message,
+        requestId: req.requestId
+      });
+    }
+
+    logger.info('Hotel login successful', {
+      hotelId,
+      hotelName: hotelData.hotelName,
+      email,
+      requestId: req.requestId,
+      ip: req.ip
+    });
+
+    res.json({
+      success: true,
+      hotelToken,
+      hotelId,
+      hotelName: hotelData.hotelName,
+      contactEmail: hotelData.contactEmail,
+      expiresIn: '30 days'
+    });
+
+  } catch (error) {
+    logger.error('Hotel login error', {
+      error: error.message,
+      stack: error.stack,
+      requestId: req.requestId
+    });
+    res.status(500).json({
+      error: 'Login failed',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

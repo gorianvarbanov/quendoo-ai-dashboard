@@ -27,6 +27,8 @@ import { initializeFirestore, checkFirestoreHealth } from './db/firestore.js';
 import * as conversationService from './db/conversationService.js';
 import { logAudit, LOG_TYPES, LOG_ACTIONS } from './db/auditService.js';
 import { createHotelId } from './utils/hashUtils.js';
+import logger from './utils/logger.js';
+import { addCorrelationId, logHttpRequests, logErrors } from './middleware/requestLogger.js';
 
 const app = express();
 const port = process.env.PORT || 3100;
@@ -36,11 +38,9 @@ const inputValidator = new InputValidator();
 const outputFilter = new OutputFilter();
 const toolValidator = new ToolValidator();
 const securityMonitor = new SecurityMonitor();
-console.log('[Security] All security modules initialized');
-console.log('[Security] - Input Validator: Active');
-console.log('[Security] - Output Filter: Active');
-console.log('[Security] - Tool Validator: Active');
-console.log('[Security] - Security Monitor: Active');
+logger.info('Security modules initialized', {
+  modules: ['InputValidator', 'OutputFilter', 'ToolValidator', 'SecurityMonitor']
+});
 
 // Configure CORS
 const corsOptions = {
@@ -51,11 +51,15 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-console.log('CORS configuration:', corsOptions);
+logger.info('CORS configured', { origins: corsOptions.origin });
 
 // Middleware
 app.use(cors(corsOptions));
 app.use(express.json());
+
+// Add logging middleware (must be early in the chain)
+app.use(addCorrelationId);
+app.use(logHttpRequests);
 
 // Initialize MCP Client Manager
 const mcpManager = new MCPClientManager();
@@ -71,34 +75,36 @@ async function initializeClaudeIntegration() {
     const secretConfigured = await isSecretConfigured('anthropic-api-key');
     if (secretConfigured) {
       currentApiKey = await getSecret('anthropic-api-key');
-      console.log('[Init] Loaded API key from Secret Manager');
+      logger.info('Loaded API key from Secret Manager');
     } else {
       // Fallback to environment variable (for local development)
       currentApiKey = process.env.ANTHROPIC_API_KEY;
-      console.log('[Init] Using API key from environment variable');
+      logger.info('Using API key from environment variable');
     }
 
     if (currentApiKey && currentApiKey !== 'your-api-key-here') {
       claudeIntegration = new ClaudeIntegration(currentApiKey, mcpManager);
-      console.log('[Init] Claude API integration enabled');
+      logger.info('Claude API integration enabled');
       return true;
     } else {
       claudeIntegration = null;
-      console.log('[Init] Claude API key not configured');
+      logger.warn('Claude API key not configured');
       return false;
     }
   } catch (error) {
     // If Secret Manager fails (e.g., local development), use env variable
-    console.warn('[Init] Secret Manager not available, using environment variable:', error.message);
+    logger.warn('Secret Manager not available, using environment variable', {
+      error: error.message
+    });
     currentApiKey = process.env.ANTHROPIC_API_KEY;
 
     if (currentApiKey && currentApiKey !== 'your-api-key-here') {
       claudeIntegration = new ClaudeIntegration(currentApiKey, mcpManager);
-      console.log('[Init] Claude API integration enabled (env fallback)');
+      logger.info('Claude API integration enabled (env fallback)');
       return true;
     } else {
       claudeIntegration = null;
-      console.log('[Init] Claude API key not configured');
+      logger.warn('Claude API key not configured');
       return false;
     }
   }
