@@ -82,6 +82,20 @@ const router = createRouter({
       }
     },
     {
+      path: '/admin/hotels',
+      name: 'admin-hotels',
+      component: () => import('../views/admin/AdminHotels.vue'),
+      beforeEnter: async (to, from, next) => {
+        const authStore = useAuthStore()
+        const isAuthenticated = await authStore.verifyAuthentication()
+        if (isAuthenticated) {
+          next()
+        } else {
+          next('/admin/login')
+        }
+      }
+    },
+    {
       path: '/admin/security-config',
       name: 'admin-security-config',
       component: () => import('../views/admin/AdminSecurityConfig.vue'),

@@ -66,6 +66,14 @@
           class="mb-1"
         />
         <v-list-item
+          :to="'/admin/hotels'"
+          prepend-icon="mdi-domain"
+          title="Hotels"
+          value="hotels"
+          rounded="lg"
+          class="mb-1"
+        />
+        <v-list-item
           :to="'/admin/security'"
           prepend-icon="mdi-security"
           title="Security Monitor"
