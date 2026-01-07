@@ -800,33 +800,9 @@ export class QuendooClaudeIntegration {
 
         // Check if Claude stopped but hasn't completed all expected tasks
         if (finalResponse.stop_reason === 'end_turn') {
-          const textContent = finalResponse.content.find(b => b.type === 'text');
-          const hasTextContent = !!textContent;
-
           console.log(`[Quendoo] Claude stopped with end_turn, tools executed: ${toolsUsedInfo.length}`);
-
-          // Only attempt to continue if very few tools were executed AND text suggests incompletion
-          if (hasTextContent && toolsUsedInfo.length < 2 && loopCount < 3) {
-            const text = textContent.text.toLowerCase();
-            const completionIndicators = [
-              'complete', 'done', 'finished', 'all tasks', 'successfully',
-              'завърши', 'готово', 'изпълни', 'изпрати'
-            ];
-            const indicatesCompletion = completionIndicators.some(indicator => text.includes(indicator));
-
-            if (!indicatesCompletion) {
-              console.log('[Quendoo] Attempting to continue execution (incomplete task detected)...');
-              history.push({
-                role: 'user',
-                content: [{
-                  type: 'text',
-                  text: 'Continue with the remaining tasks. Call all necessary tools to complete the request.'
-                }]
-              });
-              requestParams.messages = history;
-              continue;
-            }
-          }
+          // Trust Claude and system prompt - do not force continuation
+          // System prompt v3.2 explicitly guides tool selection and formatting
         }
 
         // No more tools to execute, exit loop
