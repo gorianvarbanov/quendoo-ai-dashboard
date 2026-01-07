@@ -12,18 +12,24 @@ const apiClient = axios.create({
   }
 })
 
-// Request interceptor for logging/debugging and adding MCP Server URL
+// Request interceptor for logging/debugging and adding authentication
 // NOTE: API key is now managed server-side for security
 apiClient.interceptors.request.use(
   (config) => {
-    // Add JWT token from localStorage if available (for admin routes)
+    // Add JWT token from localStorage if available
+    // Check for hotel token first, then admin token
     try {
+      const hotelToken = localStorage.getItem('hotelToken')
       const adminToken = localStorage.getItem('quendoo-admin-token')
-      if (adminToken) {
+
+      // Hotel token takes precedence for chat endpoints
+      if (hotelToken && (config.url.includes('/chat/') || config.url.includes('/conversations'))) {
+        config.headers['Authorization'] = `Bearer ${hotelToken}`
+      } else if (adminToken) {
         config.headers['Authorization'] = `Bearer ${adminToken}`
       }
     } catch (error) {
-      console.warn('[API] Failed to load admin token:', error)
+      console.warn('[API] Failed to load auth token:', error)
     }
 
     // Add MCP Server URL from localStorage if available
@@ -45,7 +51,7 @@ apiClient.interceptors.request.use(
     return config
   },
   (error) => {
-    console.error('[API Request Error]', error)
+    console.error('[API Request]', error)
     return Promise.reject(error)
   }
 )
@@ -81,12 +87,12 @@ export const chatApi = {
    * @param {string} conversationId - Optional conversation ID
    * @param {string} serverId - Optional server ID
    * @param {string} model - Optional Claude model to use
-   * @param {string} quendooApiKey - User's Quendoo API key
    * @returns {Promise<Object>} Response with conversation ID and AI response
    */
-  async sendMessage(content, conversationId = null, serverId = null, model = null, quendooApiKey = null, onToolProgress = null) {
+  async sendMessage(content, conversationId = null, serverId = null, model = null, onToolProgress = null) {
     // NOTE: System prompt is now managed server-side for security
-    // Client no longer sends system prompt in request body
+    // NOTE: Authentication is handled via JWT token in Authorization header
+    // Client no longer sends system prompt or API key in request body
 
     // Check if SSE streaming is requested (when onToolProgress callback is provided)
     if (onToolProgress) {
@@ -102,8 +108,8 @@ export const chatApi = {
       message: content,
       conversationId,
       serverId,
-      model,
-      quendooApiKey  // User's Quendoo API key from Settings
+      model
+      // API key removed - authentication via JWT token in header
       // systemPrompt removed - server controls this for security
     })
 
@@ -120,26 +126,29 @@ export const chatApi = {
    * @param {string} conversationId - Conversation ID
    * @param {string} serverId - Optional server ID
    * @param {string} model - Claude model to use
-   * @param {string} quendooApiKey - User's Quendoo API key
    * @param {Object} callbacks - { onToolStart, onToolProgress, onComplete, onError }
    */
-  async sendMessageStreaming(content, conversationId, serverId, model, quendooApiKey, callbacks = {}) {
+  async sendMessageStreaming(content, conversationId, serverId, model, callbacks = {}) {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
     const url = `${baseUrl}/chat/quendoo`
+
+    // Get hotel token for authentication
+    const hotelToken = localStorage.getItem('hotelToken')
 
     try {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'text/event-stream'  // Request SSE streaming
+          'Accept': 'text/event-stream',  // Request SSE streaming
+          'Authorization': `Bearer ${hotelToken}`  // Hotel JWT authentication
         },
         body: JSON.stringify({
           message: content,
           conversationId,
           serverId,
-          model,
-          quendooApiKey
+          model
+          // API key removed - authentication via JWT token in header
         })
       })
 

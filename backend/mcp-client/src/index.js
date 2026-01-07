@@ -14,6 +14,7 @@ import { ClaudeIntegration } from './claudeIntegration.js';
 import { QuendooClaudeIntegration } from './quendooClaudeIntegration.js';
 import adminAuth from './auth/adminAuth.js';
 import { requireAuth } from './auth/authMiddleware.js';
+import { requireHotelAuth, optionalHotelAuth, checkHotelLimits, incrementHotelUsage } from './auth/hotelAuthMiddleware.js';
 import { getSystemPrompt } from './systemPrompts.js';
 import { getSecret, isSecretConfigured } from './secretManager.js';
 import {
@@ -414,6 +415,10 @@ app.get('/admin/security/events', requireAuth, (req, res) => {
 import adminRoutes from './api/adminRoutes.js';
 app.use('/admin', requireAuth, adminRoutes);
 
+// Import and use hotel authentication routes
+import hotelRoutes from './api/hotelRoutes.js';
+app.use('/api/hotels', hotelRoutes);
+
 /**
  * Admin Analytics Endpoints
  */
@@ -668,25 +673,22 @@ app.post('/chat', async (req, res) => {
 /**
  * Process a chat message with Quendoo Remote MCP Server
  * POST /chat/quendoo
- * Body: { message, conversationId }
+ * Body: { message, conversationId, model }
+ * Auth: Requires hotel JWT token in Authorization header
  *
  * Uses Claude's MCP Connector to connect to remote HTTP/SSE MCP server
  */
-app.post('/chat/quendoo', async (req, res) => {
+app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) => {
   try {
-    const { message, conversationId, model, quendooApiKey } = req.body;
+    const { message, conversationId, model } = req.body;
     // NOTE: systemPrompt is NO LONGER accepted from client for security
+
+    // Get Quendoo API key from authenticated hotel context (loaded from Secret Manager)
+    const quendooApiKey = req.hotel.quendooApiKey;
+    const hotelId = req.hotel.hotelId;
 
     if (!message) {
       return res.status(400).json({ error: 'message required' });
-    }
-
-    // Validate Quendoo API key is provided by user
-    if (!quendooApiKey || quendooApiKey.trim() === '') {
-      return res.status(400).json({
-        error: 'Quendoo API key required',
-        details: 'Please provide your Quendoo API key in Settings to use the chatbot.'
-      });
     }
 
     const finalConversationId = conversationId || `conv_${Date.now()}`;
@@ -803,7 +805,6 @@ app.post('/chat/quendoo', async (req, res) => {
 
         // === DATABASE: Persist messages to Firestore ===
         try {
-          const hotelId = createHotelId(quendooApiKey);
           const existingConv = await conversationService.getConversation(finalConversationId);
           if (!existingConv) {
             await conversationService.createConversation(hotelId, {
@@ -858,6 +859,9 @@ app.post('/chat/quendoo', async (req, res) => {
           model: model || 'claude-sonnet-4-5-20250929'
         });
 
+        // === USAGE TRACKING: Increment message counter ===
+        await incrementHotelUsage(hotelId, 'message');
+
         res.end();
       } catch (streamError) {
         console.error('[SSE] Stream error:', streamError);
@@ -883,9 +887,6 @@ app.post('/chat/quendoo', async (req, res) => {
 
       // === DATABASE: Persist messages to Firestore ===
       try {
-        // Create hotel ID from Quendoo API key
-        const hotelId = createHotelId(quendooApiKey);
-
         // Check if conversation exists, create if not
         const existingConv = await conversationService.getConversation(finalConversationId);
         if (!existingConv) {
@@ -918,6 +919,9 @@ app.post('/chat/quendoo', async (req, res) => {
         messageLength: message.length,
         model: model || 'claude-sonnet-4-5-20250929'
       });
+
+      // === USAGE TRACKING: Increment message counter ===
+      await incrementHotelUsage(hotelId, 'message');
 
       res.json({
         conversationId: finalConversationId,

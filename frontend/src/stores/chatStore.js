@@ -289,9 +289,8 @@ export const useChatStore = defineStore('chat', () => {
       isStreaming.value = true
       error.value = null
 
-      // Get Quendoo API key from settings
-      const settingsStore = useSettingsStore()
-      const quendooApiKey = settingsStore.quendooApiKey
+      // NOTE: Authentication now handled via JWT token in Authorization header
+      // No need to pass Quendoo API key anymore
 
       // Track tools being executed in real-time
       const toolsInProgress = ref([])
@@ -313,7 +312,6 @@ export const useChatStore = defineStore('chat', () => {
         conversationId,
         serverId,
         selectedModel.value,
-        quendooApiKey,
         {
           // Real-time callback when a tool starts
           onToolStart: (toolName, toolParams) => {

@@ -13,6 +13,12 @@ const router = createRouter({
       name: 'chat',
       component: () => import('../views/ChatView.vue')
     },
+    // Hotel registration
+    {
+      path: '/register',
+      name: 'hotel-registration',
+      component: () => import('../views/HotelRegistrationView.vue')
+    },
     // Admin routes
     {
       path: '/admin/login',
