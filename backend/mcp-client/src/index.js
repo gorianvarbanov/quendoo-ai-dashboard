@@ -270,25 +270,39 @@ app.post('/conversations', async (req, res) => {
 });
 
 /**
- * Get all conversations
+ * Get all conversations for authenticated hotel
  * GET /conversations
- * Query params: limit (optional), quendooApiKey (optional)
- * Headers: x-quendoo-api-key (optional)
+ * Query params: limit (optional)
+ * Headers: Authorization: Bearer <hotelToken> (required)
+ * Returns only conversations for the authenticated hotel
  */
-app.get('/conversations', async (req, res) => {
+app.get('/conversations', optionalHotelAuth, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
 
-    // Get Quendoo API key from query param or header
-    const quendooApiKey = req.query.quendooApiKey || req.headers['x-quendoo-api-key'];
+    // Get hotel ID from authenticated context
+    // If no authentication, fallback to 'default' for backward compatibility
+    const hotelId = req.hotel?.hotelId || 'default';
 
-    // Create hotel ID from API key, fallback to 'default' (for admin viewing all)
-    const hotelId = quendooApiKey ? createHotelId(quendooApiKey) : 'default';
+    logger.info('Fetching conversations', {
+      hotelId,
+      limit,
+      authenticated: !!req.hotel
+    });
 
     const conversations = await conversationService.getConversations(hotelId, limit);
+
+    logger.info('Conversations fetched', {
+      hotelId,
+      count: conversations.length
+    });
+
     res.json({ conversations });
   } catch (error) {
-    console.error('[Conversations] Error fetching conversations:', error);
+    logger.error('Error fetching conversations', {
+      error: error.message,
+      hotelId: req.hotel?.hotelId
+    });
     res.status(500).json({ error: 'Failed to fetch conversations' });
   }
 });
@@ -317,12 +331,13 @@ app.get('/conversations/all', requireAuth, async (req, res) => {
 });
 
 /**
- * Search conversations
+ * Search conversations for authenticated hotel
  * GET /conversations/search
  * Query params: q (search term), limit (optional)
+ * Headers: Authorization: Bearer <hotelToken> (optional)
  * NOTE: Must come BEFORE /conversations/:id route
  */
-app.get('/conversations/search', async (req, res) => {
+app.get('/conversations/search', optionalHotelAuth, async (req, res) => {
   try {
     const { q, limit } = req.query;
 
@@ -330,12 +345,24 @@ app.get('/conversations/search', async (req, res) => {
       return res.status(400).json({ error: 'Search term required' });
     }
 
+    // Get hotel ID from authenticated context or fallback to 'default'
+    const hotelId = req.hotel?.hotelId || 'default';
     const searchLimit = parseInt(limit) || 20;
-    const results = await conversationService.searchConversations('default', q.trim(), searchLimit);
+
+    logger.info('Searching conversations', {
+      hotelId,
+      query: q.trim(),
+      limit: searchLimit
+    });
+
+    const results = await conversationService.searchConversations(hotelId, q.trim(), searchLimit);
 
     res.json({ conversations: results, query: q.trim() });
   } catch (error) {
-    console.error('[Conversations] Error searching conversations:', error);
+    logger.error('Error searching conversations', {
+      error: error.message,
+      hotelId: req.hotel?.hotelId
+    });
     res.status(500).json({ error: 'Failed to search conversations' });
   }
 });
@@ -343,19 +370,42 @@ app.get('/conversations/search', async (req, res) => {
 /**
  * Get specific conversation with messages
  * GET /conversations/:id
+ * Headers: Authorization: Bearer <hotelToken> (optional)
+ * Returns conversation only if it belongs to the authenticated hotel
  */
-app.get('/conversations/:id', async (req, res) => {
+app.get('/conversations/:id', optionalHotelAuth, async (req, res) => {
   try {
     const { id } = req.params;
+    const hotelId = req.hotel?.hotelId || 'default';
+
+    logger.info('Fetching conversation', {
+      conversationId: id,
+      hotelId
+    });
+
     const conversation = await conversationService.getConversationWithMessages(id);
 
     if (!conversation) {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
+    // Security check: Verify conversation belongs to authenticated hotel
+    if (req.hotel && conversation.hotelId && conversation.hotelId !== hotelId) {
+      logger.warn('Unauthorized conversation access attempt', {
+        conversationId: id,
+        requestedBy: hotelId,
+        belongsTo: conversation.hotelId
+      });
+      return res.status(403).json({ error: 'Access denied to this conversation' });
+    }
+
     res.json({ conversation });
   } catch (error) {
-    console.error('[Conversations] Error fetching conversation:', error);
+    logger.error('Error fetching conversation', {
+      error: error.message,
+      conversationId: req.params.id,
+      hotelId: req.hotel?.hotelId
+    });
     res.status(500).json({ error: 'Failed to fetch conversation' });
   }
 });
