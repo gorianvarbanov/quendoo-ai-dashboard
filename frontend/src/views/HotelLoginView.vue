@@ -32,6 +32,15 @@
           @click:append-inner="showPassword = !showPassword"
           :error-messages="passwordError"
           required
+          class="mb-2"
+        />
+
+        <v-checkbox
+          v-model="rememberMe"
+          label="Запомни ме"
+          color="primary"
+          density="compact"
+          hide-details
           class="mb-4"
         />
 
@@ -77,7 +86,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import axios from 'axios'
+import api from '@/plugins/axios'
 
 const router = useRouter()
 
@@ -85,6 +94,7 @@ const router = useRouter()
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
+const rememberMe = ref(true) // Default to true for better UX
 const loading = ref(false)
 const errorMessage = ref('')
 const emailError = ref('')
@@ -116,9 +126,7 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3100'
-
-    const response = await axios.post(`${backendUrl}/api/hotels/login`, {
+    const response = await api.post('/api/hotels/login', {
       email: email.value,
       password: password.value
     })
@@ -129,6 +137,10 @@ const handleLogin = async () => {
       localStorage.setItem('hotelId', response.data.hotelId)
       localStorage.setItem('hotelName', response.data.hotelName)
       localStorage.setItem('hotelEmail', response.data.contactEmail)
+
+      // Store remember me preference and login timestamp
+      localStorage.setItem('rememberMe', rememberMe.value ? 'true' : 'false')
+      localStorage.setItem('loginTimestamp', Date.now().toString())
 
       console.log('[Hotel Login] Login successful, redirecting to chat')
 
@@ -142,17 +154,47 @@ const handleLogin = async () => {
     console.error('[Hotel Login] Error:', error)
 
     if (error.response) {
-      if (error.response.status === 401) {
-        errorMessage.value = 'Invalid email or password'
-      } else if (error.response.status === 403) {
-        errorMessage.value = 'Your account has been suspended. Please contact support.'
+      const status = error.response.status
+      const data = error.response.data
+
+      if (status === 423) {
+        // Account locked
+        if (data.code === 'ACCOUNT_LOCKED') {
+          const lockedUntil = new Date(data.lockedUntil)
+          const now = new Date()
+          const minutesRemaining = Math.ceil((lockedUntil - now) / 60000)
+
+          errorMessage.value = `Акаунтът е временно заключен поради твърде много неуспешни опити за вход. Опитайте отново след ${minutesRemaining} минути.`
+        } else {
+          errorMessage.value = data.error || 'Account is temporarily locked'
+        }
+      } else if (status === 429) {
+        // Rate limit exceeded
+        const retryAfter = data.retryAfter || '15 минути'
+        errorMessage.value = `Твърде много опити за вход. Моля, опитайте отново след ${retryAfter}.`
+      } else if (status === 401) {
+        // Invalid credentials
+        const attemptsRemaining = data.attemptsRemaining
+        if (attemptsRemaining !== undefined && attemptsRemaining > 0) {
+          errorMessage.value = `Грешен email или парола. Остават ${attemptsRemaining} ${attemptsRemaining === 1 ? 'опит' : 'опита'}.`
+        } else if (attemptsRemaining === 0) {
+          errorMessage.value = 'Грешен email или парола. Това е последният Ви опит преди заключване на акаунта.'
+        } else {
+          errorMessage.value = 'Грешен email или парола.'
+        }
+      } else if (status === 403) {
+        if (data.code === 'ACCOUNT_SUSPENDED') {
+          errorMessage.value = 'Вашият акаунт е суспендиран. Моля, свържете се с поддръжката.'
+        } else {
+          errorMessage.value = 'Достъпът е отказан.'
+        }
       } else {
-        errorMessage.value = error.response.data?.error || 'Login failed. Please try again.'
+        errorMessage.value = data?.error || 'Неуспешен вход. Моля, опитайте отново.'
       }
     } else if (error.request) {
-      errorMessage.value = 'Cannot connect to server. Please check your internet connection.'
+      errorMessage.value = 'Няма връзка със сървъра. Моля, проверете интернет връзката си.'
     } else {
-      errorMessage.value = 'An unexpected error occurred. Please try again.'
+      errorMessage.value = 'Възникна неочаквана грешка. Моля, опитайте отново.'
     }
   } finally {
     loading.value = false

@@ -2,9 +2,13 @@
 import { onMounted, onUnmounted } from 'vue'
 import { useTheme } from 'vuetify'
 import { useSettingsStore } from '@/stores/settingsStore'
+import { useSessionTimeout } from '@/composables/useSessionTimeout'
 
 const theme = useTheme()
 const settingsStore = useSettingsStore()
+
+// Session timeout management
+const { showWarning, minutesRemaining, secondsRemaining, refreshSession, logout } = useSessionTimeout()
 
 // PostMessage listener for Quendoo integration
 const handlePostMessage = (event) => {
@@ -97,6 +101,61 @@ onUnmounted(() => {
     <v-main class="main-container">
       <router-view />
     </v-main>
+
+    <!-- Session Timeout Warning Dialog -->
+    <v-dialog
+      v-model="showWarning"
+      persistent
+      max-width="450"
+    >
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="warning" size="28" class="mr-2">mdi-clock-alert-outline</v-icon>
+          <span class="text-h6">Сесията Ви скоро изтича</span>
+        </v-card-title>
+
+        <v-divider />
+
+        <v-card-text class="pa-4">
+          <p class="text-body-1 mb-3">
+            Вашата сесия ще изтече след:
+          </p>
+          <div class="d-flex justify-center align-center my-4">
+            <div class="text-center">
+              <div class="text-h3 font-weight-bold text-warning">
+                {{ minutesRemaining }}:{{ secondsRemaining.toString().padStart(2, '0') }}
+              </div>
+              <div class="text-caption text-medium-emphasis mt-1">
+                минути:секунди
+              </div>
+            </div>
+          </div>
+          <p class="text-body-2 text-medium-emphasis">
+            Искате ли да продължите да работите? Натиснете "Продължи" за да обновите сесията си.
+          </p>
+        </v-card-text>
+
+        <v-divider />
+
+        <v-card-actions class="pa-4">
+          <v-btn
+            variant="text"
+            @click="logout"
+          >
+            Излез
+          </v-btn>
+          <v-spacer />
+          <v-btn
+            color="primary"
+            variant="elevated"
+            @click="refreshSession"
+            prepend-icon="mdi-refresh"
+          >
+            Продължи
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-app>
 </template>
 
