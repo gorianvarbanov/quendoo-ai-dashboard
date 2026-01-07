@@ -191,47 +191,6 @@
         </div>
       </div>
 
-      <!-- DEBUG PANEL - Shows toolsUsed structure for debugging -->
-      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0" class="debug-panel">
-        <div class="debug-header" @click="toggleDebugPanel">
-          <v-icon size="16" color="warning">mdi-bug</v-icon>
-          <span class="debug-title">DEBUG: toolsUsed Structure</span>
-          <v-icon size="16" color="grey">{{ debugPanelOpen ? 'mdi-chevron-up' : 'mdi-chevron-down' }}</v-icon>
-        </div>
-        <div v-if="debugPanelOpen" class="debug-content">
-          <div v-for="(tool, idx) in toolsUsed" :key="idx" class="debug-tool-item">
-            <div class="debug-tool-header">Tool {{ idx }}:</div>
-            <div class="debug-field">
-              <span class="debug-label">name:</span>
-              <span class="debug-value">{{ tool?.name || 'undefined' }}</span>
-            </div>
-            <div class="debug-field">
-              <span class="debug-label">has result:</span>
-              <span class="debug-value" :class="tool?.result ? 'debug-true' : 'debug-false'">
-                {{ !!tool?.result }}
-              </span>
-            </div>
-            <div class="debug-field">
-              <span class="debug-label">result type:</span>
-              <span class="debug-value">{{ typeof tool?.result }}</span>
-            </div>
-            <div v-if="tool?.result" class="debug-field">
-              <span class="debug-label">result keys:</span>
-              <span class="debug-value">{{ Object.keys(tool.result).join(', ') }}</span>
-            </div>
-            <div class="debug-field">
-              <span class="debug-label">Full tool object:</span>
-              <pre class="debug-json">{{ JSON.stringify(tool, null, 2) }}</pre>
-            </div>
-          </div>
-          <div class="debug-field">
-            <span class="debug-label">hasRoomDetails computed:</span>
-            <span class="debug-value" :class="hasRoomDetails ? 'debug-true' : 'debug-false'">
-              {{ hasRoomDetails }}
-            </span>
-          </div>
-        </div>
-      </div>
 
       <!-- Availability Summary Table (shown when availability data is detected) -->
       <div v-if="hasAvailability && availabilitySummary && !isUser && !isStreaming" class="availability-summary">
@@ -637,10 +596,6 @@ function toggleToolsAccordion() {
   toolsExpanded.value = !toolsExpanded.value
 }
 
-// Toggle debug panel
-function toggleDebugPanel() {
-  debugPanelOpen.value = !debugPanelOpen.value
-}
 
 // Copy tool code to clipboard
 async function copyToolCode(tool) {
@@ -913,9 +868,6 @@ const roomGalleryOpen = ref(false)
 
 // Availability panel state
 const availabilityPanelOpen = ref(false)
-
-// Debug panel state
-const debugPanelOpen = ref(false) // Closed by default
 
 // Detect and extract room data (grouped by room)
 const roomCards = computed(() => {
@@ -2731,89 +2683,4 @@ const formattedContent = computed(() => {
   margin-bottom: 12px;
 }
 
-/* Debug Panel Styles */
-.debug-panel {
-  margin: 12px 0;
-  border: 2px solid #ff9800;
-  border-radius: 8px;
-  background: rgba(255, 152, 0, 0.05);
-  overflow: hidden;
-}
-
-.debug-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(255, 152, 0, 0.1);
-  cursor: pointer;
-  user-select: none;
-}
-
-.debug-header:hover {
-  background: rgba(255, 152, 0, 0.15);
-}
-
-.debug-title {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #f57c00;
-  flex: 1;
-}
-
-.debug-content {
-  padding: 12px;
-}
-
-.debug-tool-item {
-  margin-bottom: 16px;
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.5);
-  border-radius: 6px;
-  border: 1px solid rgba(255, 152, 0, 0.2);
-}
-
-.debug-tool-header {
-  font-weight: 600;
-  color: #f57c00;
-  margin-bottom: 8px;
-  font-size: 0.9rem;
-}
-
-.debug-field {
-  margin: 6px 0;
-  font-size: 0.85rem;
-  font-family: 'Courier New', monospace;
-}
-
-.debug-label {
-  color: #666;
-  font-weight: 600;
-  margin-right: 8px;
-}
-
-.debug-value {
-  color: #333;
-}
-
-.debug-true {
-  color: #4caf50;
-  font-weight: bold;
-}
-
-.debug-false {
-  color: #f44336;
-  font-weight: bold;
-}
-
-.debug-json {
-  margin-top: 6px;
-  padding: 8px;
-  background: rgba(0, 0, 0, 0.05);
-  border-radius: 4px;
-  font-size: 0.75rem;
-  overflow-x: auto;
-  max-height: 300px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-}
 </style>
