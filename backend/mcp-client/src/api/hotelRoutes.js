@@ -12,6 +12,9 @@ import { getFirestore } from '../db/firestore.js';
 import { logAudit, LOG_TYPES, LOG_ACTIONS } from '../db/auditService.js';
 import hotelStorage from '../db/hotelStorageInMemory.js';
 import logger from '../utils/logger.js';
+import { authRateLimiter, loginEmailRateLimiter, resetRateLimit } from '../middleware/rateLimiter.js';
+import { recordFailedLogin, isAccountLocked, resetFailedAttempts } from '../auth/accountLockout.js';
+import { generateTokenPair, refreshAccessToken, revokeToken } from '../auth/sessionManager.js';
 
 const SALT_ROUNDS = 10;
 
@@ -29,7 +32,7 @@ logger.info('Hotel Routes storage mode', {
  * Body: { quendooApiKey: string, hotelName?: string, contactEmail: string, password: string }
  * Returns: { success: true, hotelToken: JWT, hotelId, hotelName }
  */
-router.post('/register', async (req, res) => {
+router.post('/register', authRateLimiter, async (req, res) => {
   try {
     const { quendooApiKey, hotelName, contactEmail, password } = req.body;
 
@@ -221,7 +224,7 @@ router.post('/register', async (req, res) => {
  * Body: { email: string, password: string }
  * Returns: { success: true, hotelToken: JWT, hotelId, hotelName }
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authRateLimiter, loginEmailRateLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -256,6 +259,23 @@ router.post('/login', async (req, res) => {
     const hotelData = hotelDoc.data();
     const hotelId = hotelDoc.id;
 
+    // Check if account is locked
+    const lockStatus = await isAccountLocked(hotelId);
+    if (lockStatus && lockStatus.locked) {
+      logger.warn('Login failed - account locked', {
+        hotelId,
+        email,
+        lockedUntil: lockStatus.lockedUntil,
+        requestId: req.requestId
+      });
+      return res.status(423).json({
+        error: 'Account temporarily locked due to too many failed login attempts',
+        lockedUntil: lockStatus.lockedUntil,
+        lockoutCount: lockStatus.lockoutCount,
+        code: 'ACCOUNT_LOCKED'
+      });
+    }
+
     // Check if hotel is active
     if (hotelData.status !== 'active') {
       logger.warn('Login failed - account suspended', {
@@ -273,13 +293,45 @@ router.post('/login', async (req, res) => {
     const passwordMatch = await bcrypt.compare(password, hotelData.passwordHash);
 
     if (!passwordMatch) {
+      // Record failed login attempt
+      const failureResult = await recordFailedLogin(hotelId, email, req.ip);
+
       logger.warn('Login failed - invalid password', {
         email,
         hotelId,
+        attemptsRemaining: failureResult.attemptsRemaining,
+        locked: failureResult.locked,
         requestId: req.requestId,
         ip: req.ip
       });
-      return res.status(401).json({ error: 'Invalid email or password' });
+
+      // If account was just locked, return lock message
+      if (failureResult.locked) {
+        return res.status(423).json({
+          error: 'Account locked due to too many failed login attempts',
+          lockedUntil: failureResult.lockedUntil,
+          code: 'ACCOUNT_LOCKED'
+        });
+      }
+
+      return res.status(401).json({
+        error: 'Invalid email or password',
+        attemptsRemaining: failureResult.attemptsRemaining
+      });
+    }
+
+    // Reset failed login attempts after successful login
+    await resetFailedAttempts(hotelId);
+
+    // Clear rate limits for this user after successful login
+    try {
+      resetRateLimit(`auth:${req.ip}`);
+      resetRateLimit(`login:${email}`);
+    } catch (resetError) {
+      logger.debug('Failed to reset rate limits', {
+        error: resetError.message,
+        hotelId
+      });
     }
 
     // Generate JWT token (valid for 30 days)
