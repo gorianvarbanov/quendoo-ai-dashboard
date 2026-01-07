@@ -587,4 +587,129 @@ router.put('/password/change', async (req, res) => {
   }
 });
 
+/**
+ * GET /admin/hotels
+ * Get all registered hotels
+ * Returns list of hotels with metadata (no sensitive data)
+ */
+router.get('/hotels', async (req, res) => {
+  try {
+    const { getFirestore } = await import('../db/firestore.js');
+    const db = await getFirestore();
+
+    const hotelsSnapshot = await db.collection('hotels').get();
+
+    const hotels = hotelsSnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        hotelId: doc.id,
+        hotelName: data.hotelName,
+        contactEmail: data.contactEmail,
+        status: data.status,
+        registeredAt: data.registeredAt,
+        subscription: data.subscription,
+        usage: data.usage,
+        limits: data.limits
+        // NOTE: passwordHash and apiKeySecretName are intentionally excluded
+      };
+    });
+
+    // Sort by registration date (newest first)
+    hotels.sort((a, b) => {
+      const dateA = new Date(a.registeredAt || 0);
+      const dateB = new Date(b.registeredAt || 0);
+      return dateB - dateA;
+    });
+
+    res.json({
+      success: true,
+      hotels,
+      total: hotels.length
+    });
+  } catch (error) {
+    console.error('[Admin] Error fetching hotels:', error);
+    res.status(500).json({
+      error: 'Failed to fetch hotels',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * GET /admin/hotels/:hotelId
+ * Get specific hotel details
+ */
+router.get('/hotels/:hotelId', async (req, res) => {
+  try {
+    const { hotelId } = req.params;
+    const { getFirestore } = await import('../db/firestore.js');
+    const db = await getFirestore();
+
+    const hotelDoc = await db.collection('hotels').doc(hotelId).get();
+
+    if (!hotelDoc.exists) {
+      return res.status(404).json({ error: 'Hotel not found' });
+    }
+
+    const data = hotelDoc.data();
+
+    res.json({
+      success: true,
+      hotel: {
+        hotelId: hotelDoc.id,
+        hotelName: data.hotelName,
+        contactEmail: data.contactEmail,
+        status: data.status,
+        registeredAt: data.registeredAt,
+        subscription: data.subscription,
+        usage: data.usage,
+        limits: data.limits,
+        security: data.security,
+        apiKeySecretName: data.apiKeySecretName
+        // passwordHash is still excluded for security
+      }
+    });
+  } catch (error) {
+    console.error('[Admin] Error fetching hotel:', error);
+    res.status(500).json({
+      error: 'Failed to fetch hotel',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+/**
+ * PATCH /admin/hotels/:hotelId/status
+ * Update hotel status (activate/suspend)
+ */
+router.patch('/hotels/:hotelId/status', async (req, res) => {
+  try {
+    const { hotelId } = req.params;
+    const { status } = req.body;
+
+    if (!['active', 'suspended'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status. Must be "active" or "suspended"' });
+    }
+
+    const { getFirestore } = await import('../db/firestore.js');
+    const db = await getFirestore();
+
+    await db.collection('hotels').doc(hotelId).update({
+      status,
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: `Hotel ${status === 'active' ? 'activated' : 'suspended'} successfully`
+    });
+  } catch (error) {
+    console.error('[Admin] Error updating hotel status:', error);
+    res.status(500).json({
+      error: 'Failed to update hotel status',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 export default router;
