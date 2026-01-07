@@ -338,6 +338,11 @@ const error = computed(() => chatStore.error)
 
 const recentConversations = computed(() => {
   return Array.from(chatStore.conversations.values())
+    .filter(conv => {
+      // Show only conversations with messages or with a custom title
+      return (conv.messageCount && conv.messageCount > 0) ||
+             (conv.title && conv.title !== 'New Conversation')
+    })
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 20)
 })
