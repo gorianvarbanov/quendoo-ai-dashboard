@@ -22,75 +22,21 @@
         <span class="message-timestamp">{{ formattedTime }}</span>
       </div>
 
-      <!-- Room Cards (Airbnb-style) -->
-      <div v-if="hasRoomImages && !isUser && !isStreaming" class="room-cards-container">
-        <div v-for="(room, roomIndex) in roomCards" :key="roomIndex" class="room-card">
-          <!-- Room Gallery Grid -->
-          <div
-            class="room-gallery-grid"
-            :class="{
-              'single-image': room.images.length === 1,
-              'two-images': room.images.length === 2,
-              'multi-images': room.images.length >= 3
-            }"
-            @click="openRoomGallery"
-          >
-            <!-- Single image layout -->
-            <div v-if="room.images.length === 1" class="room-gallery-item room-gallery-single">
-              <img :src="room.images[0]" :alt="room.name" />
-            </div>
-
-            <!-- Two images layout -->
-            <template v-else-if="room.images.length === 2">
-              <div class="room-gallery-item room-gallery-half">
-                <img :src="room.images[0]" :alt="room.name" />
-              </div>
-              <div class="room-gallery-item room-gallery-half">
-                <img :src="room.images[1]" :alt="room.name" />
-              </div>
-            </template>
-
-            <!-- Three or more images layout -->
-            <template v-else>
-              <!-- First image (larger) -->
-              <div v-if="room.images[0]" class="room-gallery-item room-gallery-main">
-                <img :src="room.images[0]" :alt="room.name" />
-              </div>
-
-              <!-- Additional images (smaller, stacked on right) -->
-              <div class="room-gallery-side">
-                <div v-if="room.images[1]" class="room-gallery-item room-gallery-small">
-                  <img :src="room.images[1]" :alt="room.name" />
-                </div>
-                <div v-if="room.images[2]" class="room-gallery-item room-gallery-small room-gallery-more">
-                  <img :src="room.images[2]" :alt="room.name" />
-                  <div v-if="room.images.length > 3" class="room-gallery-overlay">
-                    <v-icon size="24" color="white">mdi-image-multiple</v-icon>
-                    <span class="room-overlay-text">+{{ room.images.length - 3 }}</span>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </div>
-
-          <!-- Room Info -->
-          <div class="room-info">
-            <h3 class="room-name">{{ room.name }}</h3>
-            <p v-if="room.description" class="room-description">{{ room.description }}</p>
-            <ul v-if="room.details.length > 0" class="room-details">
-              <li v-for="(detail, detailIndex) in room.details.slice(0, 3)" :key="detailIndex">
-                {{ detail }}
-              </li>
-              <li v-if="room.details.length > 3" class="room-more-details">
-                +{{ room.details.length - 3 }} more details
-              </li>
-            </ul>
-          </div>
-        </div>
+      <!-- Room Cards View Button -->
+      <div v-if="hasRoomImages && !isUser && !isStreaming" class="view-details-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-image-multiple"
+          color="primary"
+          @click="openVisualizationDrawer('room_cards', roomCards)"
+        >
+          Виж галерия на стаите ({{ roomCards.length }})
+        </v-btn>
       </div>
 
-      <!-- Message content (hidden when room cards are shown) -->
-      <div v-if="!hasRoomImages || isUser" class="message-content">
+      <!-- Message content -->
+      <div class="message-content">
         <span v-html="formattedContent"></span>
         <span v-if="isTyping" class="typing-cursor">|</span>
       </div>
@@ -192,241 +138,56 @@
       </div>
 
 
-      <!-- Availability Summary Table (shown when availability data is detected) -->
-      <div v-if="hasAvailability && availabilitySummary && !isUser && !isStreaming" class="availability-summary">
-        <div class="availability-header">
-          <v-icon size="18" color="primary" class="mr-2">mdi-chart-bar</v-icon>
-          <span class="availability-title">Наличности за {{ formatMonthYear(availabilitySummary.date_from) }}</span>
-        </div>
-
-        <div class="availability-table-wrapper">
-          <table class="availability-table">
-            <thead>
-              <tr>
-                <th class="table-header-cell">Дата</th>
-                <th
-                  v-for="room in availabilitySummary.rooms"
-                  :key="room.room_id"
-                  class="table-header-cell room-header"
-                >
-                  {{ room.room_name }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="(dateRange, index) in getDateRangesForTable(availabilitySummary.rooms)"
-                :key="index"
-                class="table-row"
-              >
-                <td class="table-cell date-cell">{{ dateRange.dateLabel }}</td>
-                <td
-                  v-for="room in availabilitySummary.rooms"
-                  :key="room.room_id"
-                  class="table-cell qty-cell"
-                  :class="getQtyCellClass(dateRange.dateRange, room)"
-                >
-                  {{ getQtyForDateRange(dateRange.dateRange, room) }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+      <!-- Availability View Button -->
+      <div v-if="hasAvailability && availabilitySummary && !isUser && !isStreaming" class="view-details-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-chart-bar"
+          color="primary"
+          @click="openVisualizationDrawer('availability', availabilitySummary)"
+        >
+          Виж наличности ({{ availabilitySummary.rooms?.length || 0 }} стаи)
+        </v-btn>
       </div>
 
-      <!-- Bookings Summary Table (shown when bookings data is detected) -->
-      <div v-if="hasBookings && bookingsData && !isUser && !isStreaming" class="bookings-summary">
-        <div class="bookings-header">
-          <v-icon size="18" color="primary" class="mr-2">mdi-calendar-check</v-icon>
-          <span class="bookings-title">Резервации ({{ bookingsData.length }})</span>
-        </div>
-
-        <div class="bookings-table-wrapper">
-          <table class="bookings-table">
-            <thead>
-              <tr>
-                <th class="table-header-cell">ID</th>
-                <th class="table-header-cell">Дати</th>
-                <th class="table-header-cell">Стая</th>
-                <th class="table-header-cell">Гости</th>
-                <th class="table-header-cell">Клиент</th>
-                <th class="table-header-cell">Статус</th>
-                <th class="table-header-cell">Сума</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="booking in bookingsData.slice(0, 10)" :key="booking.booking_id" class="table-row">
-                <td class="table-cell booking-id-cell">
-                  <strong>#{{ booking.booking_id }}</strong>
-                </td>
-                <td class="table-cell date-cell">
-                  <div class="date-range">
-                    <div>{{ formatBookingDate(booking.checkin_date) }}</div>
-                    <div class="date-separator">→</div>
-                    <div>{{ formatBookingDate(booking.checkout_date) }}</div>
-                  </div>
-                </td>
-                <td class="table-cell room-cell">
-                  <div v-for="(room, idx) in booking.rooms" :key="idx" class="room-info">
-                    {{ room.room_name }}
-                  </div>
-                </td>
-                <td class="table-cell guests-cell">
-                  <div v-for="(room, idx) in booking.rooms" :key="idx" class="guests-info">
-                    <v-icon size="14">mdi-account</v-icon> {{ room.adults }}
-                    <v-icon v-if="room.children > 0" size="14" class="ml-1">mdi-account-child</v-icon>
-                    <span v-if="room.children > 0">{{ room.children }}</span>
-                  </div>
-                </td>
-                <td class="table-cell client-cell">
-                  <div class="client-name">{{ booking.client_name }}</div>
-                  <div class="client-email">{{ booking.client_email }}</div>
-                </td>
-                <td class="table-cell status-cell">
-                  <v-chip
-                    size="small"
-                    :color="getBookingStatusColor(booking.status)"
-                    variant="flat"
-                  >
-                    {{ getBookingStatusLabel(booking.status) }}
-                  </v-chip>
-                  <v-chip
-                    size="small"
-                    :color="getPaymentStatusColor(booking.payment_status)"
-                    variant="outlined"
-                    class="mt-1"
-                  >
-                    {{ getPaymentStatusLabel(booking.payment_status) }}
-                  </v-chip>
-                </td>
-                <td class="table-cell amount-cell">
-                  <strong>{{ booking.total_amount }} {{ booking.currency }}</strong>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div v-if="bookingsData.length > 10" class="bookings-footer">
-          <v-chip size="small" color="grey" variant="outlined">
-            Показани първите 10 от {{ bookingsData.length }} резервации
-          </v-chip>
-        </div>
+      <!-- Bookings View Button -->
+      <div v-if="hasBookings && bookingsData && !isUser && !isStreaming" class="view-details-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-calendar-check"
+          color="primary"
+          @click="openVisualizationDrawer('bookings', bookingsData)"
+        >
+          Виж резервации ({{ bookingsData.length }})
+        </v-btn>
       </div>
 
-      <!-- Room Details Display (shown when get_rooms_details tool used) -->
-      <div v-if="hasRoomDetails && roomDetailsData && !isUser && !isStreaming" class="room-details-display">
-        <div class="room-details-header">
-          <v-icon size="18" color="primary" class="mr-2">mdi-bed</v-icon>
-          <span class="room-details-title">Детайли за стаите</span>
-        </div>
-
-        <div v-if="roomDetailsData.data && roomDetailsData.data.length > 0" class="rooms-grid">
-          <div
-            v-for="(room, index) in roomDetailsData.data"
-            :key="room.id"
-            class="room-card"
-          >
-            <!-- Room Image -->
-            <div v-if="room.images && room.images.length > 0" class="room-image-container">
-              <img :src="room.images[0]" :alt="room.name" class="room-image" />
-            </div>
-
-            <!-- Room Info -->
-            <div class="room-info-container">
-              <h3 class="room-name">{{ index + 1 }}. {{ room.name }}</h3>
-              <div class="room-type">{{ room.type_name }}</div>
-
-              <div class="room-specs">
-                <div class="room-spec-item">
-                  <v-icon size="16" color="grey-darken-1">mdi-vector-square</v-icon>
-                  <span>{{ room.sqm_area }} кв.м</span>
-                </div>
-                <div class="room-spec-item">
-                  <v-icon size="16" color="grey-darken-1">mdi-bed</v-icon>
-                  <span>{{ room.regular_beds }} легла</span>
-                  <span v-if="room.extra_beds > 0"> + {{ room.extra_beds }} доп.</span>
-                </div>
-              </div>
-
-              <p class="room-description">{{ room.description }}</p>
-
-              <!-- View Gallery Button -->
-              <v-btn
-                v-if="room.images && room.images.length > 1"
-                size="small"
-                variant="text"
-                prepend-icon="mdi-image-multiple"
-                @click="openRoomGallery(room)"
-              >
-                Виж галерия ({{ room.images.length }} снимки)
-              </v-btn>
-            </div>
-          </div>
-        </div>
+      <!-- Room Details View Button -->
+      <div v-if="hasRoomDetails && roomDetailsData && !isUser && !isStreaming" class="view-details-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-bed"
+          color="primary"
+          @click="openVisualizationDrawer('room_details', roomDetailsData)"
+        >
+          Виж детайли за стаите ({{ roomDetailsData.data?.length || 0 }})
+        </v-btn>
       </div>
 
-      <!-- Booking Offers Display (shown when get_booking_offers tool used) -->
-      <div v-if="hasBookingOffers && bookingOffersData && !isUser && !isStreaming" class="booking-offers-display">
-        <div class="booking-offers-header">
-          <v-icon size="18" color="primary" class="mr-2">mdi-tag-multiple</v-icon>
-          <span class="booking-offers-title">Налични оферти</span>
-        </div>
-
-        <div v-if="bookingOffersData.data && bookingOffersData.data.length > 0" class="offers-grid">
-          <div
-            v-for="(offer, index) in bookingOffersData.data"
-            :key="index"
-            class="offer-card"
-          >
-            <!-- Offer Info -->
-            <div class="offer-info-container">
-              <h3 class="offer-room-name">{{ index + 1 }}. {{ offer.room_name || offer.name }}</h3>
-              <div class="offer-rate-name">{{ offer.rate_name || 'Стандартна тарифа' }}</div>
-
-              <!-- Price Section -->
-              <div class="offer-price-section">
-                <div class="offer-total-price">
-                  {{ offer.total_price || offer.price }} {{ offer.currency || 'лв' }}
-                </div>
-                <div v-if="offer.price_per_night" class="offer-price-per-night">
-                  ({{ offer.price_per_night }} {{ offer.currency || 'лв' }}/нощ)
-                </div>
-              </div>
-
-              <!-- Offer Details -->
-              <div class="offer-details">
-                <div v-if="offer.available_rooms" class="offer-detail-item">
-                  <v-icon size="16" color="success">mdi-check-circle</v-icon>
-                  <span>Налични стаи: {{ offer.available_rooms }}</span>
-                </div>
-                <div v-if="offer.meals_included" class="offer-detail-item">
-                  <v-icon size="16" color="grey-darken-1">mdi-silverware-fork-knife</v-icon>
-                  <span>{{ offer.meals_included }}</span>
-                </div>
-                <div v-if="offer.cancellation_policy" class="offer-detail-item">
-                  <v-icon size="16" color="grey-darken-1">mdi-information</v-icon>
-                  <span>{{ offer.cancellation_policy }}</span>
-                </div>
-              </div>
-
-              <!-- Book Button -->
-              <v-btn
-                size="small"
-                color="primary"
-                variant="flat"
-                prepend-icon="mdi-calendar-check"
-                class="mt-2"
-              >
-                Резервирай
-              </v-btn>
-            </div>
-          </div>
-        </div>
-
-        <div v-else class="no-offers-message">
-          Няма налични оферти за избрания период.
-        </div>
+      <!-- Booking Offers View Button -->
+      <div v-if="hasBookingOffers && bookingOffersData && !isUser && !isStreaming" class="view-details-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-tag-multiple"
+          color="primary"
+          @click="openVisualizationDrawer('booking_offers', bookingOffersData)"
+        >
+          Виж налични оферти ({{ bookingOffersData.data?.length || 0 }})
+        </v-btn>
       </div>
 
       <!-- Table Viewer Button (shown when tables detected and typing is complete) -->
@@ -493,6 +254,14 @@
       v-model="availabilityPanelOpen"
       :raw-data="availabilityData"
     />
+
+    <!-- Visualization Drawer Component -->
+    <VisualizationDrawer
+      v-model="visualizationDrawerOpen"
+      :visualization-type="currentVisualizationType"
+      :visualization-data="currentVisualizationData"
+      @open-room-gallery="openRoomGallery"
+    />
   </div>
 </template>
 
@@ -503,6 +272,7 @@ import { marked } from 'marked'
 import TableViewer from '@/components/common/TableViewer.vue'
 import RoomGallery from '@/components/chat/RoomGallery.vue'
 import AvailabilityPanel from '@/components/chat/AvailabilityPanel.vue'
+import VisualizationDrawer from '@/components/chat/VisualizationDrawer.vue'
 
 // Configure marked for better rendering
 marked.setOptions({
@@ -869,6 +639,11 @@ const roomGalleryOpen = ref(false)
 // Availability panel state
 const availabilityPanelOpen = ref(false)
 
+// Visualization drawer state
+const visualizationDrawerOpen = ref(false)
+const currentVisualizationType = ref('')
+const currentVisualizationData = ref(null)
+
 // Detect and extract room data (grouped by room)
 const roomCards = computed(() => {
   if (!props.message.content) return []
@@ -1019,6 +794,13 @@ function openRoomGallery() {
 function openAvailabilityPanel() {
   console.log('[ChatMessage] Opening availability panel with data:', availabilityData.value)
   emit('open-availability', availabilityData.value)
+}
+
+function openVisualizationDrawer(type, data) {
+  currentVisualizationType.value = type
+  currentVisualizationData.value = data
+  visualizationDrawerOpen.value = true
+  console.log('[ChatMessage] Opening visualization drawer:', type, data)
 }
 
 // Copy message content to clipboard
@@ -2681,6 +2463,12 @@ const formattedContent = computed(() => {
   line-height: 1.5;
   color: rgba(var(--v-theme-on-surface), 0.8);
   margin-bottom: 12px;
+}
+
+/* View Details Button Styles */
+.view-details-button {
+  margin-top: 12px;
+  margin-bottom: 8px;
 }
 
 </style>
