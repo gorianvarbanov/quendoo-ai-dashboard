@@ -775,13 +775,27 @@ export class QuendooClaudeIntegration {
               const startTime = Date.now();
 
               try {
-                const result = await this.sendRequest({
-                  method: 'tools/call',
-                  params: {
-                    name: block.name,
-                    arguments: block.input
-                  }
-                });
+                let result;
+
+                // Check if this is a local tool (document search or list)
+                if (block.name === 'search_hotel_documents') {
+                  console.log('[Quendoo Streaming] Executing local tool: search_hotel_documents');
+                  const localResult = await searchHotelDocuments(block.input, this.currentHotelId);
+                  result = { result: localResult };
+                } else if (block.name === 'list_hotel_documents') {
+                  console.log('[Quendoo Streaming] Executing local tool: list_hotel_documents');
+                  const localResult = await listHotelDocuments(block.input, this.currentHotelId);
+                  result = { result: localResult };
+                } else {
+                  // Execute remote Quendoo tool
+                  result = await this.sendRequest({
+                    method: 'tools/call',
+                    params: {
+                      name: block.name,
+                      arguments: block.input
+                    }
+                  });
+                }
 
                 const duration = Date.now() - startTime;
 
