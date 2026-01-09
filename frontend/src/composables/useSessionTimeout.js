@@ -16,9 +16,10 @@ export function useSessionTimeout() {
 
   let warningTimer = null
   let countdownTimer = null
+  let isRefreshing = false // Flag to prevent modal from reopening during refresh
 
-  const TOKEN_EXPIRY_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
-  const WARNING_BEFORE_EXPIRY_MS = 5 * 60 * 1000 // 5 minutes before expiry
+  const TOKEN_EXPIRY_MS = 3 * 60 * 60 * 1000 // 3 hours
+  const WARNING_BEFORE_EXPIRY_MS = 3 * 60 * 1000 // 3 minutes before expiry
 
   /**
    * Calculate time remaining until token expires
@@ -41,6 +42,11 @@ export function useSessionTimeout() {
    * Format minutes remaining
    */
   function updateCountdown() {
+    // Don't update if modal is not shown (prevents race condition)
+    if (!showWarning.value) {
+      return
+    }
+
     const remaining = getTimeRemaining()
 
     if (remaining === 0) {
@@ -64,6 +70,25 @@ export function useSessionTimeout() {
       return
     }
 
+    // Don't show modal if we're in the middle of refreshing
+    if (isRefreshing) {
+      console.log('[Session] Blocked showWarningModal - refresh in progress')
+      return
+    }
+
+    // Don't show modal if token was just refreshed (within last 2 minutes)
+    const loginTimestamp = localStorage.getItem('loginTimestamp')
+    if (loginTimestamp) {
+      const timeSinceLogin = Date.now() - parseInt(loginTimestamp, 10)
+      const twoMinutes = 2 * 60 * 1000
+      if (timeSinceLogin < twoMinutes) {
+        console.log('[Session] Blocked showWarningModal - token recently refreshed', {
+          timeSinceLogin: Math.floor(timeSinceLogin / 1000) + 's'
+        })
+        return
+      }
+    }
+
     showWarning.value = true
     updateCountdown()
 
@@ -79,9 +104,14 @@ export function useSessionTimeout() {
   async function refreshSession() {
     try {
       console.log('[Session] Attempting to refresh session...')
+
+      // Set refreshing flag to prevent modal from reopening
+      isRefreshing = true
+
       const hotelToken = localStorage.getItem('hotelToken')
       if (!hotelToken) {
         console.error('[Session] No token found in localStorage')
+        isRefreshing = false
         throw new Error('No token found')
       }
 
@@ -90,35 +120,53 @@ export function useSessionTimeout() {
       console.log('[Session] Refresh response:', response)
 
       if (response.data.success && response.data.hotelToken) {
-        // Update token and timestamp
-        localStorage.setItem('hotelToken', response.data.hotelToken)
-        localStorage.setItem('loginTimestamp', Date.now().toString())
-
-        // Close warning modal
-        showWarning.value = false
-
-        // Clear countdown timer
+        // Clear countdown timer FIRST
         if (countdownTimer) {
           clearInterval(countdownTimer)
           countdownTimer = null
         }
 
-        // Restart warning timer
+        // Clear warning timer to prevent any pending timer from firing
+        if (warningTimer) {
+          clearTimeout(warningTimer)
+          warningTimer = null
+        }
+
+        // Close warning modal
+        showWarning.value = false
+        console.log('[Session] Modal closed, showWarning set to false')
+
+        // Update token and timestamp
+        localStorage.setItem('hotelToken', response.data.hotelToken)
+        localStorage.setItem('loginTimestamp', Date.now().toString())
+
+        // Wait for Vue reactivity and DOM to update
+        await new Promise(resolve => setTimeout(resolve, 100))
+
+        // Restart warning timer with fresh 30-day expiry
         startWarningTimer()
 
+        // Clear refreshing flag AFTER everything is done
+        isRefreshing = false
+
         console.log('[Session] Session refreshed successfully')
+
+        // Return success to indicate modal should close
+        return { success: true }
       } else {
         console.error('[Session] Refresh response missing success or token')
+        isRefreshing = false
         throw new Error('Invalid refresh response')
       }
     } catch (error) {
       console.error('[Session] Failed to refresh session:', error)
       console.error('[Session] Error details:', error.response?.data || error.message)
 
-      // Don't force logout on refresh error - just close the modal and let user try again
-      showWarning.value = false
-      alert('Неуспешно обновяване на сесията. Моля, влезте отново.')
-      handleExpiry()
+      // Clear refreshing flag on error
+      isRefreshing = false
+
+      // Return error to let UI handle it - DO NOT logout automatically
+      throw error
     }
   }
 
@@ -159,6 +207,12 @@ export function useSessionTimeout() {
    * Start the warning timer
    */
   function startWarningTimer() {
+    // Clear any existing warning timer first
+    if (warningTimer) {
+      clearTimeout(warningTimer)
+      warningTimer = null
+    }
+
     const remaining = getTimeRemaining()
 
     if (remaining === 0) {

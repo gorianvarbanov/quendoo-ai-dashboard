@@ -475,6 +475,10 @@ app.use('/admin', requireAuth, adminRoutes);
 import hotelRoutes from './api/hotelRoutes.js';
 app.use('/api/hotels', hotelRoutes);
 
+// Import and use document management routes
+import documentRoutes from './routes/documents.js';
+app.use('/api/documents', documentRoutes);
+
 /**
  * Admin Analytics Endpoints
  */
@@ -785,12 +789,33 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
       || process.env.QUENDOO_MCP_URL
       || 'https://mcp-quendoo-chatbot-222402522800.us-central1.run.app/sse';
 
-    // === SECURITY: Use Immutable Server-Side System Prompt ===
-    const finalSystemPrompt = getSystemPrompt();
+    // === Load hotel settings for custom prompt and language ===
+    let hotelSettings = {};
+    try {
+      const db = await import('./db/firestore.js').then(m => m.getFirestore());
+      const hotelDoc = await (await db).collection('hotels').doc(hotelId).get();
+      if (hotelDoc.exists) {
+        const hotelData = hotelDoc.data();
+        hotelSettings = {
+          language: hotelData.language || 'en',
+          customPrompt: hotelData.customPrompt || ''
+        };
+        console.log(`[Chat/Quendoo] Hotel settings loaded`, {
+          hotelId,
+          language: hotelSettings.language,
+          hasCustomPrompt: !!hotelSettings.customPrompt
+        });
+      }
+    } catch (error) {
+      console.warn('[Chat/Quendoo] Failed to load hotel settings, using defaults:', error.message);
+    }
+
+    // === SECURITY: Use Immutable Server-Side System Prompt with Hotel Customization ===
+    const finalSystemPrompt = getSystemPrompt('quendoo_hotel_v1', hotelSettings);
 
     console.log(`[Chat/Quendoo] Processing conversation: ${finalConversationId}`);
     console.log(`[Chat/Quendoo] Using model: ${model || 'default'}`);
-    console.log(`[Chat/Quendoo] System prompt: SERVER-CONTROLLED (v1.0)`);
+    console.log(`[Chat/Quendoo] System prompt: SERVER-CONTROLLED (v1.0 + hotel customization)`);
 
     // Get or create Quendoo integration for this conversation
     let quendooIntegration = quendooIntegrations.get(finalConversationId);
@@ -829,6 +854,7 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
           model,
           finalSystemPrompt,
           quendooApiKey,
+          hotelId,
           {
             // Callback for when a tool starts executing
             onToolStart: (toolName, toolParams) => {
@@ -935,7 +961,8 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
         finalConversationId,
         model,
         finalSystemPrompt,
-        quendooApiKey  // User-provided Quendoo API key
+        quendooApiKey,  // User-provided Quendoo API key
+        hotelId         // Hotel ID for local tool execution (document search)
       );
 
       // === SECURITY: Log successful request ===

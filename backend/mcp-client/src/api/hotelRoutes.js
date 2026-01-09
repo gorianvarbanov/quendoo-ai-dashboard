@@ -34,12 +34,13 @@ logger.info('Hotel Routes storage mode', {
  */
 router.post('/register', authRateLimiter, async (req, res) => {
   try {
-    const { quendooApiKey, hotelName, contactEmail, password } = req.body;
+    const { quendooApiKey, hotelName, contactEmail, password, contactPhone, address, language, customPrompt } = req.body;
 
     logger.info('Hotel registration request', {
       requestId: req.requestId,
       hotelName,
-      contactEmail
+      contactEmail,
+      language: language || 'en'
     });
 
     // Validate API key format
@@ -59,6 +60,17 @@ router.post('/register', authRateLimiter, async (req, res) => {
 
     if (!password || password.length < 8) {
       return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+
+    // Validate language if provided
+    const validLanguages = ['en', 'bg', 'de', 'fr', 'es', 'it', 'ru', 'mk', 'ro'];
+    if (language && !validLanguages.includes(language)) {
+      return res.status(400).json({ error: 'Invalid language', validLanguages });
+    }
+
+    // Validate custom prompt length if provided
+    if (customPrompt && customPrompt.length > 2000) {
+      return res.status(400).json({ error: 'Custom prompt too long (max 2000 characters)' });
     }
 
     // Create hotel ID from API key hash
@@ -133,7 +145,11 @@ router.post('/register', authRateLimiter, async (req, res) => {
       hotelId,
       hotelName: hotelName || 'Unknown Hotel',
       contactEmail,
+      contactPhone: contactPhone || '',
+      address: address || '',
       passwordHash, // Store hashed password
+      language: language || 'en', // Default to English
+      customPrompt: customPrompt || '', // Custom AI instructions
       registeredAt: new Date().toISOString(),
       status: 'active',
       apiKeySecretName: secretName,
@@ -561,6 +577,10 @@ router.get('/me', async (req, res) => {
       hotelId: hotelData.hotelId,
       hotelName: hotelData.hotelName,
       contactEmail: hotelData.contactEmail,
+      contactPhone: hotelData.contactPhone,
+      address: hotelData.address,
+      language: hotelData.language || 'en',
+      customPrompt: hotelData.customPrompt || '',
       registeredAt: hotelData.registeredAt,
       status: hotelData.status,
       subscription: hotelData.subscription,
@@ -569,6 +589,7 @@ router.get('/me', async (req, res) => {
     };
 
     res.json({
+      success: true,
       hotel: safeHotelData
     });
 
@@ -582,6 +603,107 @@ router.get('/me', async (req, res) => {
 
     console.error('[Hotel Me] Error:', error);
     res.status(500).json({ error: 'Failed to fetch hotel information' });
+  }
+});
+
+/**
+ * Update hotel settings (language and custom prompt)
+ * PATCH /api/hotels/settings
+ * Headers: Authorization: Bearer <hotelToken>
+ * Body: { language?: string, customPrompt?: string }
+ */
+router.patch('/settings', async (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ error: 'No token provided' });
+  }
+
+  try {
+    // Verify token
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_SECRET || 'default-jwt-secret-change-in-production'
+    );
+
+    if (decoded.type !== 'hotel') {
+      return res.status(403).json({ error: 'Invalid token type' });
+    }
+
+    const { language, customPrompt } = req.body;
+    const hotelId = decoded.hotelId;
+
+    // Validate language if provided
+    const validLanguages = ['en', 'bg', 'de', 'fr', 'es', 'it', 'ru', 'mk', 'ro'];
+    if (language && !validLanguages.includes(language)) {
+      return res.status(400).json({
+        error: 'Invalid language',
+        validLanguages
+      });
+    }
+
+    // Validate custom prompt length if provided
+    if (customPrompt && customPrompt.length > 2000) {
+      return res.status(400).json({
+        error: 'Custom prompt too long (max 2000 characters)'
+      });
+    }
+
+    // Get hotel data
+    const db = await getFirestore();
+    const hotelDoc = await db.collection('hotels').doc(hotelId).get();
+
+    if (!hotelDoc.exists) {
+      return res.status(404).json({ error: 'Hotel not found' });
+    }
+
+    // Prepare update data
+    const updateData = {
+      updatedAt: new Date().toISOString()
+    };
+
+    if (language !== undefined) {
+      updateData.language = language;
+    }
+
+    if (customPrompt !== undefined) {
+      updateData.customPrompt = customPrompt;
+    }
+
+    // Update hotel settings using set with merge to create fields if they don't exist
+    await db.collection('hotels').doc(hotelId).set(updateData, { merge: true });
+
+    console.log(`[Hotel Settings] Updated for hotel: ${hotelId}`, updateData);
+
+    // Log audit trail
+    try {
+      await logAudit(LOG_TYPES.HOTEL, 'hotel_settings_updated', {
+        hotelId,
+        updates: Object.keys(updateData)
+      });
+    } catch (auditError) {
+      console.warn('[Hotel Settings] Failed to log audit:', auditError.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Hotel settings updated successfully',
+      settings: {
+        language: language !== undefined ? language : hotelDoc.data().language || 'en',
+        customPrompt: customPrompt !== undefined ? customPrompt : hotelDoc.data().customPrompt || ''
+      }
+    });
+
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'Token expired', code: 'TOKEN_EXPIRED' });
+    }
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    console.error('[Hotel Settings] Error:', error);
+    res.status(500).json({ error: 'Failed to update hotel settings' });
   }
 });
 

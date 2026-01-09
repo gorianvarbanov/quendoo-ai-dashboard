@@ -9,6 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { EventSource } from 'eventsource';
 import fetch from 'node-fetch';
 import { OutputFilter } from './security/outputFilter.js';
+import { searchHotelDocumentsTool, searchHotelDocuments, listHotelDocumentsTool, listHotelDocuments } from './tools/documentTools.js';
 
 export class QuendooClaudeIntegration {
   constructor(apiKey, quendooServerUrl) {
@@ -22,6 +23,7 @@ export class QuendooClaudeIntegration {
     this.requestId = 0;
     this.pendingRequests = new Map(); // requestId -> { resolve, reject }
     this.outputFilter = new OutputFilter(); // Security: filter responses
+    this.currentHotelId = null; // Store current hotel ID for local tool execution
   }
 
   /**
@@ -191,9 +193,10 @@ export class QuendooClaudeIntegration {
    * Process a chat message with Claude using remote MCP server
    * @param {Function} onToolProgress - Optional callback for tool execution progress
    */
-  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null, onToolProgress = null) {
-    // Store the Quendoo API key for this request
+  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null, hotelId = null, onToolProgress = null) {
+    // Store the Quendoo API key and hotel ID for this request
     this.currentQuendooApiKey = quendooApiKey;
+    this.currentHotelId = hotelId;
 
     // Connect to MCP server if not already connected
     await this.connectToMCPServer();
@@ -223,6 +226,19 @@ export class QuendooClaudeIntegration {
         description: tool.description || '',
         input_schema: tool.inputSchema || { type: 'object', properties: {} }
       }));
+
+      // Add local backend tools (document search and list)
+      claudeTools.push({
+        name: searchHotelDocumentsTool.name,
+        description: searchHotelDocumentsTool.description,
+        input_schema: searchHotelDocumentsTool.inputSchema
+      });
+
+      claudeTools.push({
+        name: listHotelDocumentsTool.name,
+        description: listHotelDocumentsTool.description,
+        input_schema: listHotelDocumentsTool.inputSchema
+      });
 
       // Build request parameters
       const requestParams = {
@@ -340,13 +356,37 @@ export class QuendooClaudeIntegration {
         const startTime = Date.now();
 
         try {
-          const result = await this.sendRequest({
-            method: 'tools/call',
-            params: {
-              name: block.name,
-              arguments: block.input
-            }
-          });
+          let result;
+
+          // Check if this is a local tool (document search or list)
+          if (block.name === 'search_hotel_documents') {
+            console.log('[Quendoo] Executing local tool: search_hotel_documents');
+
+            // Execute local tool
+            const localResult = await searchHotelDocuments(block.input, this.currentHotelId);
+
+            result = {
+              result: localResult
+            };
+          } else if (block.name === 'list_hotel_documents') {
+            console.log('[Quendoo] Executing local tool: list_hotel_documents');
+
+            // Execute local tool
+            const localResult = await listHotelDocuments(block.input, this.currentHotelId);
+
+            result = {
+              result: localResult
+            };
+          } else {
+            // Execute remote Quendoo tool
+            result = await this.sendRequest({
+              method: 'tools/call',
+              params: {
+                name: block.name,
+                arguments: block.input
+              }
+            });
+          }
 
           const duration = Date.now() - startTime;
 
@@ -630,9 +670,10 @@ export class QuendooClaudeIntegration {
    * Process message with real-time streaming callbacks for tool execution
    * @param {Object} callbacks - { onToolStart, onToolComplete, onThinking }
    */
-  async processMessageWithStreaming(message, conversationId, model, systemPrompt, quendooApiKey, callbacks = {}) {
-    // Store the Quendoo API key for this request
+  async processMessageWithStreaming(message, conversationId, model, systemPrompt, quendooApiKey, hotelId, callbacks = {}) {
+    // Store the Quendoo API key and hotel ID for this request
     this.currentQuendooApiKey = quendooApiKey;
+    this.currentHotelId = hotelId;
 
     // Connect to MCP server if not already connected
     await this.connectToMCPServer();
@@ -662,6 +703,19 @@ export class QuendooClaudeIntegration {
         description: tool.description || '',
         input_schema: tool.inputSchema || { type: 'object', properties: {} }
       }));
+
+      // Add local backend tools (document search and list)
+      claudeTools.push({
+        name: searchHotelDocumentsTool.name,
+        description: searchHotelDocumentsTool.description,
+        input_schema: searchHotelDocumentsTool.inputSchema
+      });
+
+      claudeTools.push({
+        name: listHotelDocumentsTool.name,
+        description: listHotelDocumentsTool.description,
+        input_schema: listHotelDocumentsTool.inputSchema
+      });
 
       // Build request parameters
       const requestParams = {

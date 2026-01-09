@@ -1,14 +1,80 @@
 <script setup>
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { useSessionTimeout } from '@/composables/useSessionTimeout'
+import { t } from '@/i18n/translations'
 
 const theme = useTheme()
 const settingsStore = useSettingsStore()
 
 // Session timeout management
 const { showWarning, minutesRemaining, secondsRemaining, refreshSession, logout } = useSessionTimeout()
+const refreshError = ref(null)
+const refreshing = ref(false)
+
+// Get language from hotel settings
+const language = computed(() => {
+  const hotelData = localStorage.getItem('hotelData')
+  if (hotelData) {
+    try {
+      const parsed = JSON.parse(hotelData)
+      return parsed.language || 'en'
+    } catch (e) {
+      return 'en'
+    }
+  }
+  return 'en'
+})
+
+// Translations for session timeout dialog
+const sessionTranslations = computed(() => ({
+  sessionExpiring: t('sessionExpiring', language.value),
+  sessionExpiringDesc: t('sessionExpiringDesc', language.value),
+  minutes: t('minutes', language.value),
+  seconds: t('seconds', language.value),
+  continueWorking: t('continueWorking', language.value),
+  exit: t('exit', language.value),
+  continue: t('continue', language.value)
+}))
+
+// Handle refresh session with error handling
+async function handleRefreshSession() {
+  console.log('[App] handleRefreshSession called, showWarning before:', showWarning.value)
+  refreshError.value = null
+  refreshing.value = true
+
+  try {
+    const result = await refreshSession()
+    console.log('[App] refreshSession succeeded, result:', result)
+    console.log('[App] showWarning after success:', showWarning.value)
+    // Success - modal will close automatically in refreshSession()
+    // Clear any previous errors
+    refreshError.value = null
+  } catch (error) {
+    console.log('[App] refreshSession failed:', error)
+    console.log('[App] showWarning after error:', showWarning.value)
+    // Show error message
+    const errorMessage = error.response?.data?.error || error.message || 'Failed to refresh session'
+    refreshError.value = errorMessage
+  } finally {
+    refreshing.value = false
+    console.log('[App] handleRefreshSession complete, showWarning final:', showWarning.value)
+  }
+}
+
+// Handle logout
+function handleLogout() {
+  console.log('[App] handleLogout called')
+  logout()
+}
+
+// Watch for modal closing to clear errors
+watch(showWarning, (isOpen) => {
+  if (!isOpen) {
+    refreshError.value = null
+  }
+})
 
 // PostMessage listener for Quendoo integration
 const handlePostMessage = (event) => {
@@ -111,14 +177,14 @@ onUnmounted(() => {
       <v-card>
         <v-card-title class="d-flex align-center pa-4">
           <v-icon color="warning" size="28" class="mr-2">mdi-clock-alert-outline</v-icon>
-          <span class="text-h6">Сесията Ви скоро изтича</span>
+          <span class="text-h6">{{ sessionTranslations.sessionExpiring }}</span>
         </v-card-title>
 
         <v-divider />
 
         <v-card-text class="pa-4">
           <p class="text-body-1 mb-3">
-            Вашата сесия ще изтече след:
+            {{ sessionTranslations.sessionExpiringDesc }}:
           </p>
           <div class="d-flex justify-center align-center my-4">
             <div class="text-center">
@@ -126,13 +192,26 @@ onUnmounted(() => {
                 {{ minutesRemaining }}:{{ secondsRemaining.toString().padStart(2, '0') }}
               </div>
               <div class="text-caption text-medium-emphasis mt-1">
-                минути:секунди
+                {{ sessionTranslations.minutes }}:{{ sessionTranslations.seconds }}
               </div>
             </div>
           </div>
           <p class="text-body-2 text-medium-emphasis">
-            Искате ли да продължите да работите? Натиснете "Продължи" за да обновите сесията си.
+            {{ sessionTranslations.continueWorking }}
           </p>
+
+          <!-- Error Alert -->
+          <v-alert
+            v-if="refreshError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mt-4"
+            closable
+            @click:close="refreshError = null"
+          >
+            {{ refreshError }}
+          </v-alert>
         </v-card-text>
 
         <v-divider />
@@ -140,18 +219,21 @@ onUnmounted(() => {
         <v-card-actions class="pa-4">
           <v-btn
             variant="text"
-            @click="logout"
+            @click="handleLogout"
+            :disabled="refreshing"
           >
-            Излез
+            {{ sessionTranslations.exit }}
           </v-btn>
           <v-spacer />
           <v-btn
             color="primary"
             variant="elevated"
-            @click="refreshSession"
+            @click="handleRefreshSession"
             prepend-icon="mdi-refresh"
+            :loading="refreshing"
+            :disabled="refreshing"
           >
-            Продължи
+            {{ sessionTranslations.continue }}
           </v-btn>
         </v-card-actions>
       </v-card>

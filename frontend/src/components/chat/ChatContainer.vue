@@ -26,7 +26,16 @@
           block
           class="new-chat-btn"
         >
-          New chat
+          {{ uiTranslations.newConversation }}
+        </v-btn>
+        <v-btn
+          variant="text"
+          prepend-icon="mdi-file-document-multiple"
+          @click="goToDocuments"
+          block
+          class="mt-2"
+        >
+          Documents
         </v-btn>
       </div>
 
@@ -34,7 +43,7 @@
       <div class="sidebar-search">
         <v-text-field
           v-model="searchQuery"
-          placeholder="Search conversations..."
+          :placeholder="uiTranslations.searchConversations"
           variant="outlined"
           density="compact"
           hide-details
@@ -145,7 +154,7 @@
           >
             <v-icon size="20">mdi-menu</v-icon>
           </v-btn>
-          <span class="conversation-title">{{ currentConversation?.title || 'New Conversation' }}</span>
+          <span class="conversation-title">{{ currentConversation?.title || uiTranslations.newConversation }}</span>
         </div>
       </div>
 
@@ -233,19 +242,19 @@
               variant="tonal"
               class="mb-4"
             >
-              <div class="text-subtitle-2 mb-2">Hotel Registered</div>
+              <div class="text-subtitle-2 mb-2">{{ uiTranslations.hotelRegistered }}</div>
               <div class="text-body-2">
-                Your hotel is successfully registered and ready to use the AI assistant.
+                {{ uiTranslations.hotelRegisteredDesc }}
               </div>
             </v-alert>
 
             <div v-if="isHotelRegistered" class="hotel-info mb-4">
               <div class="info-row">
-                <span class="info-label">Hotel ID:</span>
+                <span class="info-label">{{ uiTranslations.hotelId }}:</span>
                 <span class="info-value">{{ hotelId }}</span>
               </div>
               <div class="info-row">
-                <span class="info-label">Hotel Name:</span>
+                <span class="info-label">{{ uiTranslations.hotelName }}:</span>
                 <span class="info-value">{{ hotelName }}</span>
               </div>
             </div>
@@ -270,13 +279,82 @@
               @click="handleLogout"
               prepend-icon="mdi-logout"
             >
-              Logout
+              {{ uiTranslations.logout }}
             </v-btn>
 
             <div v-if="!isHotelRegistered" class="info-text">
               <v-icon size="small" class="mr-1">mdi-information</v-icon>
-              Your Quendoo API key is encrypted and stored securely. It is never exposed in your browser.
+              {{ uiTranslations.securityInfo }}
             </div>
+          </div>
+
+          <!-- AI Assistant Settings (only show if hotel is registered) -->
+          <div v-if="isHotelRegistered" class="setting-section">
+            <v-divider class="my-6" />
+
+            <h3 class="setting-label">
+              <v-icon size="20" class="mr-2">mdi-robot</v-icon>
+              {{ uiTranslations.aiAssistantSettings }}
+            </h3>
+
+            <v-select
+              v-model="language"
+              :items="languages"
+              item-title="label"
+              item-value="value"
+              :label="uiTranslations.responseLanguage"
+              variant="outlined"
+              density="comfortable"
+              class="mb-4"
+              prepend-inner-icon="mdi-translate"
+              :hint="uiTranslations.languageHint"
+              persistent-hint
+            />
+
+            <v-textarea
+              v-model="customPrompt"
+              :label="uiTranslations.customInstructions"
+              variant="outlined"
+              rows="4"
+              class="mb-4"
+              prepend-inner-icon="mdi-text"
+              :hint="uiTranslations.customInstructionsHint"
+              persistent-hint
+              counter="2000"
+              :rules="[v => !v || v.length <= 2000 || 'Must be at most 2000 characters']"
+            />
+
+            <v-alert
+              v-if="settingsSaved"
+              type="success"
+              variant="tonal"
+              density="compact"
+              class="mb-4"
+            >
+              {{ uiTranslations.settingsSaved }}
+            </v-alert>
+
+            <v-alert
+              v-if="settingsError"
+              type="error"
+              variant="tonal"
+              density="compact"
+              class="mb-4"
+            >
+              {{ settingsError }}
+            </v-alert>
+
+            <v-btn
+              color="primary"
+              block
+              size="large"
+              @click="saveSettings"
+              :loading="savingSettings"
+              :disabled="!settingsChanged"
+              prepend-icon="mdi-content-save"
+            >
+              {{ uiTranslations.saveSettings }}
+            </v-btn>
           </div>
         </div>
       </div>
@@ -297,6 +375,8 @@ import { useTheme } from 'vuetify'
 import { useChatStore } from '@/stores/chatStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { chatApi } from '@/services/api'
+import axios from 'axios'
+import { t } from '@/i18n/translations'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 import AvailabilityPanel from './AvailabilityPanel.vue'
@@ -322,14 +402,79 @@ const hotelName = ref(localStorage.getItem('hotelName'))
 const availabilityPanelOpen = ref(false)
 const availabilityData = ref(null)
 
+// AI Assistant Settings state
+const language = ref('en')
+const customPrompt = ref('')
+const originalLanguage = ref('en')
+const originalCustomPrompt = ref('')
+const savingSettings = ref(false)
+const settingsSaved = ref(false)
+const settingsError = ref(null)
+
+// Language options
+const languages = [
+  { label: 'English', value: 'en' },
+  { label: 'Български', value: 'bg' },
+  { label: 'Deutsch', value: 'de' },
+  { label: 'Français', value: 'fr' },
+  { label: 'Español', value: 'es' },
+  { label: 'Italiano', value: 'it' },
+  { label: 'Русский', value: 'ru' },
+  { label: 'Македонски', value: 'mk' },
+  { label: 'Română', value: 'ro' }
+]
+
+// Computed translations based on selected language
+const uiTranslations = computed(() => {
+  const lang = language.value || 'en'
+  return {
+    hotelRegistration: t('hotelRegistration', lang),
+    hotelRegistered: t('hotelRegistered', lang),
+    hotelRegisteredDesc: t('hotelRegisteredDesc', lang),
+    hotelId: t('hotelId', lang),
+    hotelName: t('hotelName', lang),
+    logout: t('logout', lang),
+    securityInfo: t('securityInfo', lang),
+    aiAssistantSettings: t('aiAssistantSettings', lang),
+    responseLanguage: t('responseLanguage', lang),
+    languageHint: t('languageHint', lang),
+    customInstructions: t('customInstructions', lang),
+    customInstructionsHint: t('customInstructionsHint', lang),
+    saveSettings: t('saveSettings', lang),
+    settingsSaved: t('settingsSaved', lang),
+    newConversation: t('newConversation', lang),
+    settings: t('settings', lang),
+    searchConversations: t('searchConversations', lang),
+    noMessagesYet: t('noMessagesYet', lang),
+    startConversation: t('startConversation', lang),
+    typeMessage: t('typeMessage', lang),
+    noConversationsFound: t('noConversationsFound', lang),
+    tryDifferentSearch: t('tryDifferentSearch', lang),
+    searchResults: t('searchResults', lang)
+  }
+})
+
 // Computed
 const isHotelRegistered = computed(() => {
   return !!hotelToken.value && !!hotelId.value
 })
 
+const settingsChanged = computed(() => {
+  return language.value !== originalLanguage.value ||
+         customPrompt.value !== originalCustomPrompt.value
+})
+
 // Navigation
 const goToRegistration = () => {
   router.push('/register')
+}
+
+const goToDocuments = () => {
+  router.push('/documents')
+}
+
+const goToSettings = () => {
+  settingsDrawer.value = true
 }
 
 const handleLogout = () => {
@@ -448,6 +593,95 @@ function handleOpenAvailability(data) {
   availabilityData.value = data
   availabilityPanelOpen.value = true
 }
+
+// Load hotel settings from backend
+async function loadHotelSettings() {
+  if (!isHotelRegistered.value) return
+
+  try {
+    const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+    const response = await axios.get(`${backendUrl}/api/hotels/me`, {
+      headers: {
+        'Authorization': `Bearer ${hotelToken.value}`
+      }
+    })
+
+    if (response.data.success) {
+      const hotelData = response.data.hotel
+      language.value = hotelData.language || 'en'
+      customPrompt.value = hotelData.customPrompt || ''
+      originalLanguage.value = language.value
+      originalCustomPrompt.value = customPrompt.value
+      console.log('[ChatContainer] Hotel settings loaded:', { language: language.value, hasCustomPrompt: !!customPrompt.value })
+    }
+  } catch (error) {
+    console.error('[ChatContainer] Failed to load hotel settings:', error)
+  }
+}
+
+// Save hotel settings to backend
+async function saveSettings() {
+  if (!isHotelRegistered.value) return
+
+  savingSettings.value = true
+  settingsSaved.value = false
+  settingsError.value = null
+
+  try {
+    const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+    const fullUrl = `${backendUrl}/api/hotels/settings`
+    console.log('[ChatContainer] Saving settings to URL:', fullUrl)
+    console.log('[ChatContainer] VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL)
+
+    const response = await axios.patch(
+      fullUrl,
+      {
+        language: language.value,
+        customPrompt: customPrompt.value
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${hotelToken.value}`
+        }
+      }
+    )
+
+    if (response.data.success) {
+      originalLanguage.value = language.value
+      originalCustomPrompt.value = customPrompt.value
+      settingsSaved.value = true
+      console.log('[ChatContainer] Settings saved successfully')
+
+      // Hide success message after 3 seconds
+      setTimeout(() => {
+        settingsSaved.value = false
+      }, 3000)
+    } else {
+      settingsError.value = response.data.error || 'Failed to save settings'
+    }
+  } catch (error) {
+    console.error('[ChatContainer] Failed to save settings:', error)
+    console.error('[ChatContainer] Error response:', error.response)
+    console.error('[ChatContainer] Error data:', error.response?.data)
+    settingsError.value = error.response?.data?.error || error.message || 'Failed to save settings. Please try again.'
+  } finally {
+    savingSettings.value = false
+  }
+}
+
+// Load settings when component mounts and hotel is registered
+watch(isHotelRegistered, (registered) => {
+  if (registered) {
+    loadHotelSettings()
+  }
+}, { immediate: true })
+
+// Also load settings when settings drawer opens
+watch(settingsDrawer, (isOpen) => {
+  if (isOpen && isHotelRegistered.value) {
+    loadHotelSettings()
+  }
+})
 
 </script>
 

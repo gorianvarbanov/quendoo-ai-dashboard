@@ -22,6 +22,20 @@ const router = createRouter({
         }
       }
     },
+    {
+      path: '/documents',
+      name: 'documents',
+      component: () => import('../views/DocumentsView.vue'),
+      beforeEnter: (to, from, next) => {
+        const hotelToken = localStorage.getItem('hotelToken')
+        if (!hotelToken) {
+          // No hotel token - redirect to login
+          next('/login')
+        } else {
+          next()
+        }
+      }
+    },
     // Hotel authentication
     {
       path: '/login',

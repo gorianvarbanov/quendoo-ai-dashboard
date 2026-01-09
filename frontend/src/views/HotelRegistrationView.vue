@@ -121,6 +121,38 @@
                 It will never be visible in your browser or logs.
               </v-alert>
 
+              <v-divider class="my-6"></v-divider>
+
+              <h4 class="text-h6 mb-4">AI Assistant Settings</h4>
+
+              <v-select
+                v-model="language"
+                :items="languages"
+                item-title="label"
+                item-value="value"
+                label="Response Language"
+                variant="outlined"
+                class="mb-4"
+                prepend-inner-icon="mdi-translate"
+                hint="Language for AI assistant responses"
+                persistent-hint
+              ></v-select>
+
+              <v-textarea
+                v-model="customPrompt"
+                label="Custom Instructions (optional)"
+                variant="outlined"
+                rows="4"
+                class="mb-4"
+                prepend-inner-icon="mdi-text"
+                hint="Add specific instructions for your hotel. Example: 'Always mention our SPA center'"
+                persistent-hint
+                counter="2000"
+                :rules="[rules.maxLength(2000)]"
+              ></v-textarea>
+
+              <v-divider class="my-6"></v-divider>
+
               <v-checkbox
                 v-model="termsAccepted"
                 :rules="[rules.required]"
@@ -182,6 +214,22 @@
                   </template>
                   <v-list-item-title>API Key</v-list-item-title>
                   <v-list-item-subtitle>••••••••••••{{ quendooApiKey.slice(-4) }}</v-list-item-subtitle>
+                </v-list-item>
+
+                <v-list-item>
+                  <template v-slot:prepend>
+                    <v-icon>mdi-translate</v-icon>
+                  </template>
+                  <v-list-item-title>Response Language</v-list-item-title>
+                  <v-list-item-subtitle>{{ languages.find(l => l.value === language)?.label }}</v-list-item-subtitle>
+                </v-list-item>
+
+                <v-list-item v-if="customPrompt">
+                  <template v-slot:prepend>
+                    <v-icon>mdi-text</v-icon>
+                  </template>
+                  <v-list-item-title>Custom Instructions</v-list-item-title>
+                  <v-list-item-subtitle>{{ customPrompt.substring(0, 100) }}{{ customPrompt.length > 100 ? '...' : '' }}</v-list-item-subtitle>
                 </v-list-item>
               </v-list>
             </v-card>
@@ -312,10 +360,25 @@ const address = ref('');
 const password = ref('');
 const passwordConfirm = ref('');
 const quendooApiKey = ref('');
+const language = ref('bg'); // Default to Bulgarian
+const customPrompt = ref('');
 const termsAccepted = ref(false);
 const showApiKey = ref(false);
 const showPassword = ref(false);
 const showPasswordConfirm = ref(false);
+
+// Language options
+const languages = [
+  { label: 'English', value: 'en' },
+  { label: 'Български', value: 'bg' },
+  { label: 'Deutsch', value: 'de' },
+  { label: 'Français', value: 'fr' },
+  { label: 'Español', value: 'es' },
+  { label: 'Italiano', value: 'it' },
+  { label: 'Русский', value: 'ru' },
+  { label: 'Македонски', value: 'mk' },
+  { label: 'Română', value: 'ro' }
+];
 
 // UI state
 const loading = ref(false);
@@ -338,6 +401,7 @@ const rules = {
     return pattern.test(value) || 'Invalid email';
   },
   minLength: (min) => value => value.length >= min || `Must be at least ${min} characters`,
+  maxLength: (max) => value => !value || value.length <= max || `Must be at most ${max} characters`,
   passwordMatch: value => value === password.value || 'Passwords do not match'
 };
 
@@ -374,7 +438,9 @@ const register = async () => {
       contactEmail: contactEmail.value,
       password: password.value,
       contactPhone: contactPhone.value,
-      address: address.value
+      address: address.value,
+      language: language.value,
+      customPrompt: customPrompt.value
     });
 
     if (response.data.success) {

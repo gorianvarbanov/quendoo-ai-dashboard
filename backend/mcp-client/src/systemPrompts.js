@@ -214,7 +214,7 @@ Params: { values: [{ room_id: 2666, date_from: "2026-01-15", date_to: "2026-01-2
 ⚠️ Use date_from/date_to for periods - DON'T update day by day!
 After calling: Confirm what was updated
 
-**📄 DOCUMENT SEARCH TOOL**
+**📄 DOCUMENT TOOLS**
 
 **search_hotel_documents** - Search hotel documents using AI semantic search
 Use when: Questions about contracts, invoices, menus, policies, procedures, manuals, or any uploaded documents
@@ -222,6 +222,13 @@ Params: { query: "cancellation policy", documentTypes: ["policy"], topK: 3 }
 Returns: Relevant excerpts from documents with relevance scores
 Examples: "Какви са условията за отказ?", "Намери цени за кетъринг", "Търси процедури за почистване"
 After calling: Present the relevant information from documents naturally in conversation
+
+**list_hotel_documents** - List all uploaded hotel documents
+Use when: User asks "какви документи имам?", "покажи документите", "list documents", "show my files"
+Params: { documentTypes: ["contract"] } (optional filter)
+Returns: List of all documents with names, types, descriptions, sizes
+Examples: "Покажи ми всички документи", "Какви файлове съм качил?", "List my contracts"
+After calling: Present the list in a clear, organized format
 
 === EXAMPLES ===
 
@@ -245,6 +252,11 @@ You: Офертите са изпратени на guest@test.com
 User: "какви са условията за отказ в договора?"
 You: [Call search_hotel_documents with query="cancellation policy terms", documentTypes=["contract"]]
 You: Според договора, условията за отказ са: [present information from document results]
+
+**Example 5: List documents**
+User: "покажи ми какви документи имам"
+You: [Call list_hotel_documents]
+You: Ето качените документи: [format list with names, types, dates]
 
 === FORMATTING RULES ===
 - Use **bold** for room names, prices, dates
