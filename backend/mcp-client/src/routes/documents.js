@@ -54,6 +54,7 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
   let tempFilePath = null;
 
   try {
+    // Use JWT hotelId for document storage (secure, no API key exposure)
     const hotelId = req.hotel.hotelId;
     const file = req.file;
     const { documentType, tags, description } = req.body;
@@ -90,7 +91,8 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
 
     // Step 5: Upload file to Google Cloud Storage
     console.log('[Documents] Uploading to Cloud Storage...');
-    const storagePath = `hotel_${hotelId}/${Date.now()}_${file.originalname}`;
+    // Note: hotelId already contains 'hotel_' prefix from JWT token
+    const storagePath = `${hotelId}/${Date.now()}_${file.originalname}`;
     const bucket = storage.bucket(BUCKET_NAME);
     const blob = bucket.file(storagePath);
 
@@ -170,6 +172,7 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
  */
 router.get('/', requireHotelAuth, async (req, res) => {
   try {
+    // Use JWT hotelId for document listing (secure, no API key exposure)
     const hotelId = req.hotel.hotelId;
     const { documentType, tags, limit } = req.query;
 
@@ -225,6 +228,7 @@ router.get('/', requireHotelAuth, async (req, res) => {
  */
 router.delete('/:id', requireHotelAuth, async (req, res) => {
   try {
+    // Use JWT hotelId for document deletion (secure, no API key exposure)
     const hotelId = req.hotel.hotelId;
     const documentId = req.params.id;
 

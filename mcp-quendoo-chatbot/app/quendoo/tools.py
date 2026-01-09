@@ -232,6 +232,49 @@ QUENDOO_TOOLS = [
             },
             "required": ["to", "subject", "message"]
         }
+    },
+    {
+        "name": "search_hotel_documents",
+        "description": "Search hotel documents using semantic search. Use this to find information in uploaded hotel documents (policies, procedures, manuals, etc.). Returns relevant excerpts from documents that match the query.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural language search query (e.g., 'What is the cancellation policy?', 'Hotel breakfast times')"
+                },
+                "documentTypes": {
+                    "type": "array",
+                    "description": "Optional filter by document types (e.g., ['policy', 'procedure', 'manual']). Leave empty to search all documents.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "topK": {
+                    "type": "integer",
+                    "description": "Number of results to return (1-10). Default is 3.",
+                    "minimum": 1,
+                    "maximum": 10
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "list_hotel_documents",
+        "description": "List all uploaded hotel documents with metadata. Use this to see what documents are available for the hotel.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "documentTypes": {
+                    "type": "array",
+                    "description": "Optional filter by document types (e.g., ['policy', 'procedure', 'manual']). Leave empty to list all documents.",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        }
     }
 ]
 
@@ -426,6 +469,44 @@ async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_ke
             message=tool_args["message"]
         )
         return {"success": True, "result": result}
+
+    # === DOCUMENT TOOLS ===
+
+    elif tool_name == "search_hotel_documents":
+        # Import document service
+        from app.services.document_service import search_hotel_documents
+
+        # Get hotelId from tool arguments (sent by backend from JWT token)
+        hotel_id = tool_args.get("hotelId")
+        if not hotel_id:
+            return {
+                "success": False,
+                "error": "hotelId parameter is required for document search"
+            }
+
+        return await search_hotel_documents(
+            hotel_id=hotel_id,  # Use hotel ID from JWT token (secure)
+            query=tool_args["query"],
+            document_types=tool_args.get("documentTypes"),
+            top_k=tool_args.get("topK", 3)
+        )
+
+    elif tool_name == "list_hotel_documents":
+        # Import document service
+        from app.services.document_service import list_hotel_documents
+
+        # Get hotelId from tool arguments (sent by backend from JWT token)
+        hotel_id = tool_args.get("hotelId")
+        if not hotel_id:
+            return {
+                "success": False,
+                "error": "hotelId parameter is required for listing documents"
+            }
+
+        return await list_hotel_documents(
+            hotel_id=hotel_id,  # Use hotel ID from JWT token (secure)
+            document_types=tool_args.get("documentTypes")
+        )
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

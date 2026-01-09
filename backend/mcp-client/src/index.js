@@ -785,9 +785,14 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
     }
 
     // Get Quendoo MCP server URL from header, fallback to environment, then to default
-    const quendooUrl = req.headers['x-mcp-server-url']
-      || process.env.QUENDOO_MCP_URL
-      || 'https://mcp-quendoo-chatbot-222402522800.us-central1.run.app/sse';
+    let quendooUrl = req.headers['x-mcp-server-url']
+      || process.env.MCP_SERVER_URL
+      || 'https://mcp-quendoo-server-222402522800.us-central1.run.app';
+
+    // Ensure URL ends with /sse
+    if (!quendooUrl.endsWith('/sse')) {
+      quendooUrl = quendooUrl + '/sse';
+    }
 
     // === Load hotel settings for custom prompt and language ===
     let hotelSettings = {};

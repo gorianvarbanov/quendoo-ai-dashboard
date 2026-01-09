@@ -33,9 +33,10 @@ function getHotelCollection(hotelId) {
 
   const db = admin.firestore();
 
-  // Use namespace-based isolation: hotel_{hotelId}.hotel_documents
+  // Use namespace-based isolation: {hotelId}/documents/hotel_documents
+  // Note: hotelId already contains 'hotel_' prefix from JWT token
   // This ensures complete data isolation between hotels at the database level
-  return db.collection(`hotel_${hotelId}`).doc('documents').collection(COLLECTION_NAME);
+  return db.collection(hotelId).doc('documents').collection(COLLECTION_NAME);
 }
 
 /**

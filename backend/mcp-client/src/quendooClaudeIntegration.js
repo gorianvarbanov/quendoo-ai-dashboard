@@ -9,7 +9,6 @@ import Anthropic from '@anthropic-ai/sdk';
 import { EventSource } from 'eventsource';
 import fetch from 'node-fetch';
 import { OutputFilter } from './security/outputFilter.js';
-import { searchHotelDocumentsTool, searchHotelDocuments, listHotelDocumentsTool, listHotelDocuments } from './tools/documentTools.js';
 
 export class QuendooClaudeIntegration {
   constructor(apiKey, quendooServerUrl) {
@@ -23,7 +22,6 @@ export class QuendooClaudeIntegration {
     this.requestId = 0;
     this.pendingRequests = new Map(); // requestId -> { resolve, reject }
     this.outputFilter = new OutputFilter(); // Security: filter responses
-    this.currentHotelId = null; // Store current hotel ID for local tool execution
   }
 
   /**
@@ -220,25 +218,12 @@ export class QuendooClaudeIntegration {
       const complexity = this.detectTaskComplexity(message);
       console.log(`[Quendoo] Task complexity: ${complexity}`);
 
-      // Convert MCP tools to Claude format
+      // Convert MCP tools to Claude format (includes document tools from MCP)
       const claudeTools = this.availableTools.map(tool => ({
         name: tool.name,
         description: tool.description || '',
         input_schema: tool.inputSchema || { type: 'object', properties: {} }
       }));
-
-      // Add local backend tools (document search and list)
-      claudeTools.push({
-        name: searchHotelDocumentsTool.name,
-        description: searchHotelDocumentsTool.description,
-        input_schema: searchHotelDocumentsTool.inputSchema
-      });
-
-      claudeTools.push({
-        name: listHotelDocumentsTool.name,
-        description: listHotelDocumentsTool.description,
-        input_schema: listHotelDocumentsTool.inputSchema
-      });
 
       // Build request parameters
       const requestParams = {
@@ -356,37 +341,19 @@ export class QuendooClaudeIntegration {
         const startTime = Date.now();
 
         try {
-          let result;
-
-          // Check if this is a local tool (document search or list)
-          if (block.name === 'search_hotel_documents') {
-            console.log('[Quendoo] Executing local tool: search_hotel_documents');
-
-            // Execute local tool
-            const localResult = await searchHotelDocuments(block.input, this.currentHotelId);
-
-            result = {
-              result: localResult
-            };
-          } else if (block.name === 'list_hotel_documents') {
-            console.log('[Quendoo] Executing local tool: list_hotel_documents');
-
-            // Execute local tool
-            const localResult = await listHotelDocuments(block.input, this.currentHotelId);
-
-            result = {
-              result: localResult
-            };
-          } else {
-            // Execute remote Quendoo tool
-            result = await this.sendRequest({
-              method: 'tools/call',
-              params: {
-                name: block.name,
-                arguments: block.input
-              }
-            });
+          // Add hotelId to document tool arguments
+          if (block.name === 'search_hotel_documents' || block.name === 'list_hotel_documents') {
+            block.input.hotelId = this.currentHotelId;
           }
+
+          // Execute all tools through MCP server
+          const result = await this.sendRequest({
+            method: 'tools/call',
+            params: {
+              name: block.name,
+              arguments: block.input
+            }
+          });
 
           const duration = Date.now() - startTime;
 
@@ -697,25 +664,12 @@ export class QuendooClaudeIntegration {
       const complexity = this.detectTaskComplexity(message);
       console.log(`[Quendoo] Task complexity: ${complexity}`);
 
-      // Convert MCP tools to Claude format
+      // Convert MCP tools to Claude format (includes document tools from MCP)
       const claudeTools = this.availableTools.map(tool => ({
         name: tool.name,
         description: tool.description || '',
         input_schema: tool.inputSchema || { type: 'object', properties: {} }
       }));
-
-      // Add local backend tools (document search and list)
-      claudeTools.push({
-        name: searchHotelDocumentsTool.name,
-        description: searchHotelDocumentsTool.description,
-        input_schema: searchHotelDocumentsTool.inputSchema
-      });
-
-      claudeTools.push({
-        name: listHotelDocumentsTool.name,
-        description: listHotelDocumentsTool.description,
-        input_schema: listHotelDocumentsTool.inputSchema
-      });
 
       // Build request parameters
       const requestParams = {
@@ -775,27 +729,19 @@ export class QuendooClaudeIntegration {
               const startTime = Date.now();
 
               try {
-                let result;
-
-                // Check if this is a local tool (document search or list)
-                if (block.name === 'search_hotel_documents') {
-                  console.log('[Quendoo Streaming] Executing local tool: search_hotel_documents');
-                  const localResult = await searchHotelDocuments(block.input, this.currentHotelId);
-                  result = { result: localResult };
-                } else if (block.name === 'list_hotel_documents') {
-                  console.log('[Quendoo Streaming] Executing local tool: list_hotel_documents');
-                  const localResult = await listHotelDocuments(block.input, this.currentHotelId);
-                  result = { result: localResult };
-                } else {
-                  // Execute remote Quendoo tool
-                  result = await this.sendRequest({
-                    method: 'tools/call',
-                    params: {
-                      name: block.name,
-                      arguments: block.input
-                    }
-                  });
+                // Add hotelId to document tool arguments
+                if (block.name === 'search_hotel_documents' || block.name === 'list_hotel_documents') {
+                  block.input.hotelId = this.currentHotelId;
                 }
+
+                // Execute all tools through MCP server
+                const result = await this.sendRequest({
+                  method: 'tools/call',
+                  params: {
+                    name: block.name,
+                    arguments: block.input
+                  }
+                });
 
                 const duration = Date.now() - startTime;
 
