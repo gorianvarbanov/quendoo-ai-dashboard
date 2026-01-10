@@ -108,8 +108,9 @@ export async function searchHotelDocuments(params, hotelId) {
       fileName: result.fileName,
       documentType: result.documentType,
       relevanceScore: Math.round(result.similarity * 100) / 100,
-      excerpt: result.textChunk.substring(0, 500) + (result.textChunk.length > 500 ? '...' : ''),
-      fullText: result.textChunk,
+      excerpt: result.textChunk.substring(0, 800) + (result.textChunk.length > 800 ? '...' : ''),
+      // REMOVED fullText - can be 1500 chars × 10 results = 15K chars = ~5K tokens
+      // fullText: result.textChunk,
       // Hybrid search scores (for debugging/transparency)
       semanticScore: result.originalSemanticScore ? Math.round(result.originalSemanticScore * 100) / 100 : null,
       keywordScore: result.keywordScore ? Math.round(result.keywordScore * 100) / 100 : null,
@@ -117,8 +118,8 @@ export async function searchHotelDocuments(params, hotelId) {
       // Contextual metadata (if available)
       heading: result.heading || null,
       position: result.position ? Math.round(result.position * 100) + '%' : null,
-      // Structured data and tags
-      structuredData: result.structuredData,
+      // Structured data REMOVED - 152 records × 31 fields = ~150K tokens!
+      // structuredData: result.structuredData,
       tags: result.tags
     }));
 
