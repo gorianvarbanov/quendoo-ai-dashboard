@@ -40,7 +40,7 @@ function getHotelCollection(hotelId) {
 }
 
 /**
- * Create a new hotel document with vector embeddings
+ * Create a new hotel document with vector embeddings in subcollection
  * @param {string} hotelId - Hotel ID (immutable)
  * @param {object} documentData - Document data
  * @returns {Promise<object>} - Created document with ID
@@ -63,12 +63,6 @@ export async function createDocument(hotelId, documentData) {
 
     const collection = getHotelCollection(hotelId);
 
-    // Prepare document with immutable hotelId
-    // Note: We store embeddings as a base64 encoded JSON string to avoid Firestore nested array limitations
-    const embeddingsString = documentData.embeddings
-      ? Buffer.from(JSON.stringify(documentData.embeddings)).toString('base64')
-      : '';
-
     const document = {
       // Immutable fields
       hotelId, // CRITICAL: This field cannot be changed after creation
@@ -80,11 +74,9 @@ export async function createDocument(hotelId, documentData) {
       storageUrl: documentData.storageUrl,
       storagePath: documentData.storagePath,
 
-      // Content and metadata
+      // Content (full text for reference)
       fullText: documentData.fullText || '',
-      textChunks: documentData.textChunks || [],
-      embeddingsEncoded: embeddingsString, // Base64 encoded JSON of embeddings array
-      embeddingsCount: documentData.embeddings?.length || 0,
+      chunksCount: documentData.embeddings?.length || 0,
 
       // Structured data (extracted by AI)
       structuredData: documentData.structuredData || {},
@@ -103,8 +95,41 @@ export async function createDocument(hotelId, documentData) {
       searchableText: `${documentData.fileName} ${documentData.description || ''} ${documentData.tags?.join(' ') || ''}`.toLowerCase()
     };
 
-    // Add document to Firestore
+    // Add main document to Firestore
     const docRef = await collection.add(document);
+
+    // Store chunks and embeddings in subcollection (no size limit)
+    if (documentData.textChunks && documentData.embeddings) {
+      const chunksCollection = docRef.collection('chunks');
+      const batch = admin.firestore().batch();
+
+      for (let i = 0; i < documentData.textChunks.length; i++) {
+        const chunkRef = chunksCollection.doc(`chunk_${i}`);
+
+        // Contextual enrichment: add surrounding context
+        const prevChunk = i > 0 ? documentData.textChunks[i - 1].slice(-150) : '';
+        const nextChunk = i < documentData.textChunks.length - 1 ? documentData.textChunks[i + 1].slice(0, 150) : '';
+
+        // Extract heading if present (markdown ## or bold text)
+        const heading = extractHeading(documentData.textChunks[i]);
+
+        batch.set(chunkRef, {
+          chunkIndex: i,
+          text: documentData.textChunks[i],
+          embedding: documentData.embeddings[i],
+          // Contextual metadata
+          position: i / documentData.textChunks.length, // Relative position (0-1)
+          prevContext: prevChunk,
+          nextContext: nextChunk,
+          heading: heading,
+          wordCount: documentData.textChunks[i].split(/\s+/).length,
+          createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      await batch.commit();
+      console.log(`[HotelDocument] Created ${documentData.textChunks.length} chunks with context for document ${docRef.id}`);
+    }
 
     console.log(`[HotelDocument] Created document ${docRef.id} for hotel ${hotelId}`);
 
@@ -203,7 +228,7 @@ export async function getDocumentById(hotelId, documentId) {
 }
 
 /**
- * Delete a document (and its vector data)
+ * Delete a document (and its chunks subcollection)
  * @param {string} hotelId - Hotel ID (from JWT token)
  * @param {string} documentId - Document ID
  * @returns {Promise<boolean>} - Success status
@@ -232,7 +257,20 @@ export async function deleteDocument(hotelId, documentId) {
       throw new Error('Unauthorized: Document does not belong to this hotel');
     }
 
-    // Delete document (this also deletes the vector embeddings stored in the document)
+    // Delete all chunks in subcollection first
+    const chunksCollection = docRef.collection('chunks');
+    const chunksSnapshot = await chunksCollection.get();
+
+    if (!chunksSnapshot.empty) {
+      const batch = admin.firestore().batch();
+      chunksSnapshot.docs.forEach(chunkDoc => {
+        batch.delete(chunkDoc.ref);
+      });
+      await batch.commit();
+      console.log(`[HotelDocument] Deleted ${chunksSnapshot.size} chunks for document ${documentId}`);
+    }
+
+    // Delete main document
     await docRef.delete();
 
     console.log(`[HotelDocument] Deleted document ${documentId} for hotel ${hotelId}`);
@@ -245,7 +283,7 @@ export async function deleteDocument(hotelId, documentId) {
 }
 
 /**
- * Search documents using vector similarity (Firestore vector search)
+ * Search documents using vector similarity (reads from chunks subcollection)
  * @param {string} hotelId - Hotel ID (from JWT token)
  * @param {number[]} queryEmbedding - Query embedding vector (768 dimensions)
  * @param {object} options - Search options
@@ -272,49 +310,35 @@ export async function searchDocumentsByVector(hotelId, queryEmbedding, options =
       query = query.where('documentType', 'in', documentTypes);
     }
 
-    // IMPORTANT: Firestore vector search syntax
-    // This requires a vector index to be created on the 'embeddings' field
-    // The vector search will find the most similar documents based on cosine similarity
-
-    // For now, we'll fetch all documents and calculate similarity manually
-    // In production, use Firestore's native vector search once the index is created
+    // Fetch all documents
     const snapshot = await query.get();
 
     const results = [];
 
-    snapshot.forEach(doc => {
+    // For each document, fetch chunks from subcollection and calculate similarity
+    for (const doc of snapshot.docs) {
       const data = doc.data();
 
-      // Decode embeddings from base64
-      let embeddings = [];
-      if (data.embeddingsEncoded) {
-        try {
-          const decodedString = Buffer.from(data.embeddingsEncoded, 'base64').toString('utf-8');
-          embeddings = JSON.parse(decodedString);
-        } catch (error) {
-          console.error(`[HotelDocument] Failed to decode embeddings for doc ${doc.id}:`, error);
-        }
-      }
+      // Fetch chunks from subcollection
+      const chunksSnapshot = await doc.ref.collection('chunks').get();
 
-      // Calculate similarity for each chunk embedding
-      if (embeddings && embeddings.length > 0) {
-        embeddings.forEach((embedding, chunkIndex) => {
-          const similarity = calculateCosineSimilarity(queryEmbedding, embedding);
+      chunksSnapshot.forEach(chunkDoc => {
+        const chunkData = chunkDoc.data();
+        const similarity = calculateCosineSimilarity(queryEmbedding, chunkData.embedding);
 
-          results.push({
-            id: doc.id,
-            documentId: doc.id,
-            fileName: data.fileName,
-            documentType: data.documentType,
-            chunkIndex,
-            textChunk: data.textChunks[chunkIndex],
-            similarity,
-            structuredData: data.structuredData,
-            tags: data.tags
-          });
+        results.push({
+          id: doc.id,
+          documentId: doc.id,
+          fileName: data.fileName,
+          documentType: data.documentType,
+          chunkIndex: chunkData.chunkIndex,
+          textChunk: chunkData.text,
+          similarity,
+          structuredData: data.structuredData,
+          tags: data.tags
         });
-      }
-    });
+      });
+    }
 
     // Sort by similarity (highest first) and limit results
     results.sort((a, b) => b.similarity - a.similarity);
@@ -327,6 +351,27 @@ export async function searchDocumentsByVector(hotelId, queryEmbedding, options =
     console.error('[HotelDocument] Error searching documents:', error);
     throw new Error(`Failed to search documents: ${error.message}`);
   }
+}
+
+/**
+ * Extract heading from chunk text (markdown headers or first line)
+ * @param {string} text - Chunk text
+ * @returns {string} - Extracted heading or empty string
+ */
+function extractHeading(text) {
+  // Look for markdown headers (## Header)
+  const markdownMatch = text.match(/^##\s+(.+)/m);
+  if (markdownMatch) {
+    return markdownMatch[1].trim();
+  }
+
+  // Look for first line if it's short (likely a heading)
+  const firstLine = text.split('\n')[0].trim();
+  if (firstLine.length > 0 && firstLine.length < 100 && !firstLine.endsWith('.')) {
+    return firstLine;
+  }
+
+  return '';
 }
 
 /**

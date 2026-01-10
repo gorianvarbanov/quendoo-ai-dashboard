@@ -5,7 +5,8 @@
 
 import { searchDocumentsByVector, listDocumentsByHotel } from '../models/HotelDocument.js';
 import { generateEmbedding } from '../services/embeddingService.js';
-import { expandQuery, calculateBoost } from '../services/queryExpansionService.js';
+import { expandQuery, calculateBoost, extractKeyPhrases } from '../services/queryExpansionService.js';
+import { performHybridSearch, extractKeywords } from '../services/hybridSearchService.js';
 
 /**
  * Search hotel documents using semantic search
@@ -44,7 +45,7 @@ export async function searchHotelDocuments(params, hotelId) {
 
     const topK = Math.min(Math.max(params.topK || 3, 1), 10); // Limit between 1 and 10
 
-    // Expand query with synonyms for better recall
+    // Step 1: Query Expansion
     console.log('[DocumentTools] Expanding query...');
     const queryExpansion = expandQuery(params.query, {
       maxSynonyms: 3,
@@ -58,34 +59,50 @@ export async function searchHotelDocuments(params, hotelId) {
       hasExpansion: queryExpansion.hasExpansion
     });
 
-    // Generate embedding for the expanded query
+    // Step 2: Extract keywords and phrases for hybrid search
+    const keywords = extractKeywords(params.query);
+    const phrases = extractKeyPhrases(params.query);
+
+    console.log('[DocumentTools] Extracted keywords:', keywords);
+    console.log('[DocumentTools] Extracted phrases:', phrases);
+
+    // Step 3: Generate embedding for semantic search
     const queryText = queryExpansion.hasExpansion ? queryExpansion.expanded : params.query;
     console.log('[DocumentTools] Generating query embedding...');
     const queryEmbedding = await generateEmbedding(queryText);
 
-    // Search documents using vector similarity
-    console.log('[DocumentTools] Performing vector search...');
+    // Step 4: Perform semantic (vector) search
+    console.log('[DocumentTools] Performing semantic search...');
     let results = await searchDocumentsByVector(hotelId, queryEmbedding, {
-      limit: topK * 2, // Get more results for reranking
+      limit: topK * 3, // Get more results for hybrid reranking
       documentTypes: params.documentTypes || []
     });
 
-    // Apply boost based on important terms
+    // Step 5: Hybrid reranking (combine semantic + keyword scores)
+    console.log('[DocumentTools] Applying hybrid reranking...');
+    results = performHybridSearch(
+      results, // All chunks with text
+      keywords,
+      phrases,
+      results  // Semantic results
+    );
+
+    // Step 6: Apply boost based on important terms
     if (queryExpansion.importantTerms && queryExpansion.importantTerms.length > 0) {
-      console.log('[DocumentTools] Applying score boost for important terms...');
+      console.log('[DocumentTools] Applying importance boost...');
       results = results.map(result => ({
         ...result,
         similarity: result.similarity * calculateBoost(result.textChunk, queryExpansion.importantTerms)
       }));
 
-      // Re-sort by boosted scores
+      // Re-sort by final boosted scores
       results.sort((a, b) => b.similarity - a.similarity);
     }
 
-    // Limit to requested topK after reranking
+    // Step 7: Limit to requested topK after all reranking
     results = results.slice(0, topK);
 
-    // Format results for Claude
+    // Format results for Claude with contextual information
     const formattedResults = results.map((result, index) => ({
       rank: index + 1,
       fileName: result.fileName,
@@ -93,6 +110,14 @@ export async function searchHotelDocuments(params, hotelId) {
       relevanceScore: Math.round(result.similarity * 100) / 100,
       excerpt: result.textChunk.substring(0, 500) + (result.textChunk.length > 500 ? '...' : ''),
       fullText: result.textChunk,
+      // Hybrid search scores (for debugging/transparency)
+      semanticScore: result.originalSemanticScore ? Math.round(result.originalSemanticScore * 100) / 100 : null,
+      keywordScore: result.keywordScore ? Math.round(result.keywordScore * 100) / 100 : null,
+      hybridScore: result.hybridScore ? Math.round(result.hybridScore * 100) / 100 : null,
+      // Contextual metadata (if available)
+      heading: result.heading || null,
+      position: result.position ? Math.round(result.position * 100) + '%' : null,
+      // Structured data and tags
       structuredData: result.structuredData,
       tags: result.tags
     }));
