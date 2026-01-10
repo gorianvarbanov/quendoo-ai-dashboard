@@ -105,12 +105,8 @@ async function extractTextFromExcel(filePath) {
         return;
       }
 
-      // Convert to markdown table (for visual representation)
-      fullText += convertArrayToMarkdownTable(data);
-      fullText += '\n\n';
-
-      // Add enriched text rows for better keyword search
-      fullText += '### Enriched Data (for search optimization)\n\n';
+      // OPTIMIZATION: Use ONLY enriched text for better search (markdown table is redundant for RAG)
+      // This also solves Firestore transaction size limit
       fullText += convertArrayToEnrichedText(data);
       fullText += '\n';
     });
@@ -194,6 +190,8 @@ function convertArrayToMarkdownTable(data) {
  * This dramatically improves keyword search by adding contextual labels
  * Example: "442231" becomes "Резервация номер: 442231"
  *
+ * OPTIMIZED: Compact format to reduce size (Firestore transaction limit)
+ *
  * @param {Array<Array>} data - 2D array of data (first row is headers)
  * @returns {string} - Enriched text with labeled fields
  */
@@ -207,22 +205,23 @@ function convertArrayToEnrichedText(data) {
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
 
-    // Add row separator
-    enrichedText += `\n--- Запис ${i} ---\n`;
-
-    // Add each field with its label
+    // Build compact record (one line per field, skip empties)
+    const fields = [];
     for (let j = 0; j < headers.length; j++) {
       const header = String(headers[j] || '').trim();
       const value = String(row[j] || '').trim();
 
-      // Skip empty values
-      if (!value) continue;
+      // Skip empty values and headers
+      if (!value || !header) continue;
 
-      // Add labeled field
-      enrichedText += `${header}: ${value}\n`;
+      // Compact format: "Header: value"
+      fields.push(`${header}: ${value}`);
     }
 
-    enrichedText += '\n';
+    // Add record if it has any fields
+    if (fields.length > 0) {
+      enrichedText += fields.join(' | ') + '\n\n';
+    }
   }
 
   return enrichedText;
