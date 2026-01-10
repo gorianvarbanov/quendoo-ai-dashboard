@@ -26,7 +26,7 @@
 │  Backend (Node.js + Express)                            │
 │  - Local dev: http://localhost:3100                     │
 │  - Production: https://quendoo-backend-*.run.app        │
-│  - Current revision: quendoo-backend-00067-q24          │
+│  - Current revision: quendoo-backend-00113-52h          │
 │                                                          │
 │  Routes:                                                 │
 │  - POST /chat/quendoo - Chat with Claude AI             │
@@ -43,7 +43,7 @@
 │  (Anthropic)    │     │  - Production only (no local dev) │
 │                 │     │  - URL: https://mcp-quendoo-      │
 │                 │     │    chatbot-*.run.app/sse          │
-└─────────────────┘     │  - Current: 00018-hqr             │
+└─────────────────┘     │  - Current: 00022-f9w             │
                         │                                    │
                         │  Main file: app/main.py            │
                         │  Uses: app/api/sse_mcp_routes.py  │
@@ -122,7 +122,7 @@ gcloud run deploy quendoo-backend --source . --region us-central1 --project quen
 PORT=3100
 ANTHROPIC_API_KEY=<your-key>
 CORS_ALLOWED_ORIGINS=https://quendoo-ai-dashboard.web.app,http://localhost:3000,...
-QUENDOO_MCP_URL=https://mcp-quendoo-chatbot-222402522800.us-central1.run.app/sse
+MCP_SERVER_URL=https://mcp-quendoo-chatbot-222402522800.us-central1.run.app
 QUENDOO_SYSTEM_PROMPT_VERSION=2.1
 ```
 
@@ -150,8 +150,8 @@ QUENDOO_SYSTEM_PROMPT_VERSION=2.1
 **Production deployment:**
 ```bash
 cd mcp-quendoo-chatbot
-gcloud run deploy mcp-quendoo-chatbot --source . --region us-central1 --project quendoo-ai-dashboard --allow-unauthenticated
-# Current revision: mcp-quendoo-chatbot-00018-hqr
+gcloud run deploy mcp-quendoo-chatbot --source . --region us-central1 --project quendoo-ai-dashboard --allow-unauthenticated --set-secrets=ENCRYPTION_KEY=ENCRYPTION_KEY:latest,JWT_SECRET=JWT_SECRET:latest,QUENDOO_AUTOMATION_BEARER=QUENDOO_AUTOMATION_BEARER:latest,EMAIL_API_KEY=EMAIL_API_KEY:latest --set-env-vars=GOOGLE_CLOUD_PROJECT=quendoo-ai-dashboard
+# Current revision: mcp-quendoo-chatbot-00022-f9w
 ```
 
 **Dockerfile entry point:**
@@ -168,7 +168,7 @@ CMD python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 **Key features:**
 - MCP protocol implementation over SSE
 - Per-session API key management
-- Quendoo API integration (11 tools)
+- Quendoo API integration (13 tools including document RAG)
 - Data transformation (Quendoo format → Frontend format)
 
 **Available tools:**
@@ -183,6 +183,8 @@ CMD python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 9. `post_external_property_data` - External property data
 10. `make_call` - Voice call automation
 11. `send_quendoo_email` - Send email
+12. `search_hotel_documents` - Semantic search in uploaded hotel documents (RAG)
+13. `list_hotel_documents` - List all uploaded documents for the hotel
 
 ---
 

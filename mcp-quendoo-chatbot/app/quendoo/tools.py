@@ -195,17 +195,22 @@ QUENDOO_TOOLS = [
     },
     {
         "name": "make_call",
-        "description": "Initiate a voice call with a spoken message using Quendoo automation service.",
+        "description": "Initiate a voice call with a spoken message using Quendoo automation service. IMPORTANT: Choose the language parameter intelligently based on context: (1) If user explicitly requests a language ('call in Russian', 'обади се на немски'), use that language. (2) If calling a guest/client, infer their language from their name, nationality, booking notes, or country code. (3) Otherwise, use the hotel's default language. Use native accent - bg-BG for Bulgarian native speaker, ru-RU for Russian native speaker, NOT English accent reading foreign text.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "phone": {
                     "type": "string",
-                    "description": "Phone number to call"
+                    "description": "Phone number to call (international format recommended)"
                 },
                 "message": {
                     "type": "string",
-                    "description": "Message to speak during the call"
+                    "description": "Message to speak during the call (in the target language)"
+                },
+                "language": {
+                    "type": "string",
+                    "description": "TTS language code: bg-BG (Bulgarian), de-DE (German), ru-RU (Russian), en-US (English), fr-FR (French), es-ES (Spanish), it-IT (Italian), tr-TR (Turkish), ro-RO (Romanian), pl-PL (Polish), cs-CZ (Czech), el-GR (Greek), nl-NL (Dutch), pt-PT (Portuguese), sv-SE (Swedish), da-DK (Danish), fi-FI (Finnish), no-NO (Norwegian), uk-UA (Ukrainian), ar-XA (Arabic). Choose based on who you're calling.",
+                    "default": "bg-BG"
                 }
             },
             "required": ["phone", "message"]
@@ -289,7 +294,7 @@ class AutomationClient:
         self.base_url = os.getenv("QUENDOO_AUTOMATION_BASE_URL", self.DEFAULT_BASE_URL).rstrip("/")
         self.bearer_token = os.getenv("QUENDOO_AUTOMATION_BEARER")
 
-    async def make_call(self, phone: str, message: str) -> Dict[str, Any]:
+    async def make_call(self, phone: str, message: str, language: str = "en-US") -> Dict[str, Any]:
         """Make a voice call with spoken message."""
         if not self.bearer_token:
             raise ValueError("QUENDOO_AUTOMATION_BEARER environment variable is not set")
@@ -299,7 +304,7 @@ class AutomationClient:
             "Authorization": f"Bearer {self.bearer_token}",
             "Content-Type": "application/json"
         }
-        payload = {"phone": phone, "message": message}
+        payload = {"phone": phone, "message": message, "language": language}
 
         try:
             async with httpx.AsyncClient(timeout=30) as client:
@@ -457,7 +462,8 @@ async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_ke
         automation_client = AutomationClient()
         result = await automation_client.make_call(
             phone=tool_args["phone"],
-            message=tool_args["message"]
+            message=tool_args["message"],
+            language=tool_args.get("language", "en-US")
         )
         return {"success": True, "result": result}
 
