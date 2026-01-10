@@ -217,7 +217,9 @@ async def search_hotel_documents(
                 "excerpt": excerpt,
                 # REMOVED fullText to save tokens - excerpt should be enough
                 # "fullText": result["textChunk"],
-                "structuredData": result["structuredData"],
+                # REMOVED structuredData - can be 152 records × 31 fields = HUGE token usage
+                # For Excel with 152 reservations, this alone is ~150K tokens!
+                # "structuredData": result["structuredData"],
                 "tags": result["tags"]
             })
 

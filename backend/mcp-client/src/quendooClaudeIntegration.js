@@ -684,6 +684,19 @@ export class QuendooClaudeIntegration {
         tool_choice: { type: "auto" } // Always use auto, let system prompt guide tool selection
       };
 
+      // DEBUG: Log request size to diagnose token limit issues
+      const systemTokens = Math.ceil((systemPrompt?.length || 0) / 3.5);
+      const toolsTokens = Math.ceil(JSON.stringify(claudeTools).length / 3.5);
+      const historyTokens = Math.ceil(JSON.stringify(history).length / 3.5);
+      const totalEstimated = systemTokens + toolsTokens + historyTokens;
+      console.log(`[Quendoo] Request size estimate:`,
+        `system=${systemTokens}`,
+        `tools=${toolsTokens}`,
+        `history=${historyTokens}`,
+        `total≈${totalEstimated} tokens`,
+        `(history msgs: ${history.length})`
+      );
+
       // REMOVED: Forced tool_choice = "any" was causing Claude to call too many tools
       // System prompt now guides tool selection with clear instructions
 
