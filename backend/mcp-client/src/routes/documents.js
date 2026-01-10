@@ -7,7 +7,7 @@ import express from 'express';
 import multer from 'multer';
 import { Storage } from '@google-cloud/storage';
 import { createDocument, getDocuments, deleteDocument } from '../models/HotelDocument.js';
-import { extractTextFromFile, chunkText, extractStructuredData, getDocumentMetadata } from '../services/documentExtractionService.js';
+import { extractTextFromFile, chunkText, extractStructuredData, extractStructuredDataFromExcel, getDocumentMetadata } from '../services/documentExtractionService.js';
 import { generateEmbeddingsBatch } from '../services/embeddingService.js';
 import { requireHotelAuth } from '../auth/hotelAuthMiddleware.js';
 import fs from 'fs/promises';
@@ -85,7 +85,9 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
 
     // Step 2: Chunk text for embeddings
     console.log('[Documents] Chunking text...');
-    const textChunks = chunkText(fullText, 1000, 200);
+    // Using subcollection storage - no size limit per document
+    // Optimal chunk size for semantic search: 1000-2000 characters
+    const textChunks = chunkText(fullText, 1500, 250);
     console.log(`[Documents] Created ${textChunks.length} chunks`);
 
     // Step 3: Generate embeddings for each chunk
@@ -95,7 +97,21 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
 
     // Step 4: Extract structured data
     console.log('[Documents] Extracting structured data...');
-    const structuredData = extractStructuredData(fullText, documentType);
+    let structuredData = extractStructuredData(fullText, documentType);
+
+    // For Excel files, also extract structured table data
+    const isExcel = file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                    file.mimetype === 'application/vnd.ms-excel';
+
+    if (isExcel) {
+      console.log('[Documents] Extracting structured data from Excel...');
+      const excelStructuredData = await extractStructuredDataFromExcel(tempFilePath);
+      structuredData = {
+        ...structuredData,
+        excel: excelStructuredData
+      };
+    }
+
     const metadata = getDocumentMetadata(fullText);
 
     // Step 5: Upload file to Google Cloud Storage
