@@ -262,6 +262,17 @@ app.post('/conversations', async (req, res) => {
       title: title || 'New Conversation'
     });
 
+    // CRITICAL: Clear conversation history for this new conversation
+    // This prevents token limit issues from carrying over old history
+    const newConvId = conversation.conversationId;
+
+    // Clear history in Quendoo integration if it exists
+    const quendooIntegration = quendooIntegrations.get(newConvId);
+    if (quendooIntegration) {
+      console.log(`[Conversations] Clearing history for new conversation: ${newConvId}`);
+      quendooIntegration.clearHistory(newConvId);
+    }
+
     res.json({ conversation });
   } catch (error) {
     console.error('[Conversations] Error creating conversation:', error);
