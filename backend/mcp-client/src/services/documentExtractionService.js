@@ -186,63 +186,134 @@ function convertArrayToMarkdownTable(data) {
 
 /**
  * Split text into chunks with overlap for better context preservation
+ * Uses semantic chunking for better RAG results
  * @param {string} text - Text to chunk
  * @param {number} chunkSize - Maximum characters per chunk (default: 1000)
  * @param {number} overlap - Number of overlapping characters (default: 200)
  * @returns {string[]} - Array of text chunks
  */
 export function chunkText(text, chunkSize = 1000, overlap = 200) {
-  // Clean up text - remove excessive whitespace
+  return semanticChunkText(text, chunkSize, overlap);
+}
+
+/**
+ * Semantic chunking - splits text at natural boundaries (paragraphs, sections, sentences)
+ * This provides better context preservation and more meaningful chunks for RAG
+ * @param {string} text - Text to chunk
+ * @param {number} targetSize - Target characters per chunk
+ * @param {number} minOverlap - Minimum overlap between chunks
+ * @returns {string[]} - Array of text chunks
+ */
+export function semanticChunkText(text, targetSize = 1500, minOverlap = 250) {
+  // Clean up text but preserve structure
   const cleanedText = text
-    .replace(/\s+/g, ' ')
-    .replace(/\n+/g, '\n')
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  if (cleanedText.length <= chunkSize) {
+  if (cleanedText.length <= targetSize) {
     return [cleanedText];
   }
 
   const chunks = [];
-  let startIndex = 0;
 
-  while (startIndex < cleanedText.length) {
-    // Calculate end index for this chunk
-    let endIndex = startIndex + chunkSize;
+  // Split by markdown headers (## Header) and double newlines (paragraphs)
+  const sections = cleanedText.split(/(?=\n##\s)|(?=\n\n)/);
 
-    // If this is not the last chunk, try to break at a sentence or word boundary
-    if (endIndex < cleanedText.length) {
-      // Try to find a sentence boundary (., !, ?)
-      const sentenceEnd = cleanedText.lastIndexOf('.', endIndex);
-      const questionEnd = cleanedText.lastIndexOf('?', endIndex);
-      const exclamationEnd = cleanedText.lastIndexOf('!', endIndex);
+  let currentChunk = '';
+  let previousChunkEnd = ''; // For overlap
 
-      const sentenceBoundary = Math.max(sentenceEnd, questionEnd, exclamationEnd);
+  for (const section of sections) {
+    const trimmedSection = section.trim();
+    if (!trimmedSection) continue;
 
-      if (sentenceBoundary > startIndex + chunkSize / 2) {
-        // Found a good sentence boundary
-        endIndex = sentenceBoundary + 1;
+    // Check if adding this section would exceed max size
+    const potentialLength = currentChunk.length + trimmedSection.length;
+
+    if (potentialLength <= targetSize * 1.3) {
+      // Add section to current chunk
+      currentChunk += (currentChunk ? '\n\n' : '') + trimmedSection;
+    } else {
+      // Current chunk is large enough, save it
+      if (currentChunk.length >= targetSize * 0.5) {
+        // Add overlap from previous chunk
+        const chunkWithOverlap = previousChunkEnd + currentChunk;
+        chunks.push(chunkWithOverlap.trim());
+
+        // Save end of this chunk for next overlap
+        previousChunkEnd = currentChunk.slice(-minOverlap) + '\n\n';
+        currentChunk = trimmedSection;
       } else {
-        // Fall back to word boundary
-        const wordBoundary = cleanedText.lastIndexOf(' ', endIndex);
-        if (wordBoundary > startIndex + chunkSize / 2) {
-          endIndex = wordBoundary;
-        }
+        // Current chunk too small, add section anyway
+        currentChunk += (currentChunk ? '\n\n' : '') + trimmedSection;
       }
     }
 
-    // Extract chunk
-    const chunk = cleanedText.slice(startIndex, endIndex).trim();
-    if (chunk.length > 0) {
-      chunks.push(chunk);
-    }
+    // If section itself is very large, split it by sentences
+    if (trimmedSection.length > targetSize * 1.5) {
+      // Save current chunk if any
+      if (currentChunk && currentChunk !== trimmedSection) {
+        const chunkWithOverlap = previousChunkEnd + currentChunk.replace(trimmedSection, '').trim();
+        if (chunkWithOverlap.length > 0) {
+          chunks.push(chunkWithOverlap);
+          previousChunkEnd = chunkWithOverlap.slice(-minOverlap) + '\n\n';
+        }
+      }
 
-    // Move to next chunk with overlap
-    startIndex = endIndex - overlap;
+      // Split large section by sentences
+      const sentenceChunks = splitBySentences(trimmedSection, targetSize, minOverlap);
+      sentenceChunks.forEach((chunk, idx) => {
+        if (idx === 0 && previousChunkEnd) {
+          chunks.push(previousChunkEnd + chunk);
+        } else {
+          chunks.push(chunk);
+        }
+        previousChunkEnd = chunk.slice(-minOverlap) + '\n\n';
+      });
 
-    // Ensure we don't go backwards
-    if (startIndex <= chunks[chunks.length - 1]?.length) {
-      startIndex = endIndex;
+      currentChunk = '';
     }
+  }
+
+  // Add remaining chunk
+  if (currentChunk.trim()) {
+    const chunkWithOverlap = previousChunkEnd + currentChunk;
+    chunks.push(chunkWithOverlap.trim());
+  }
+
+  // Filter out very small chunks (< 100 chars) unless it's the only chunk
+  const filtered = chunks.filter((c, idx) => c.length >= 100 || chunks.length === 1);
+
+  return filtered.length > 0 ? filtered : [cleanedText];
+}
+
+/**
+ * Split text by sentences when sections are too large
+ * @param {string} text - Text to split
+ * @param {number} targetSize - Target size per chunk
+ * @param {number} overlap - Overlap between chunks
+ * @returns {string[]} - Array of chunks
+ */
+function splitBySentences(text, targetSize, overlap) {
+  // Split by sentence boundaries (., !, ?, \n)
+  const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [text];
+
+  const chunks = [];
+  let currentChunk = '';
+
+  for (const sentence of sentences) {
+    if (currentChunk.length + sentence.length <= targetSize * 1.2) {
+      currentChunk += sentence;
+    } else {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+      }
+      currentChunk = sentence;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
   }
 
   return chunks;

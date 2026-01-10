@@ -5,6 +5,7 @@
 
 import { searchDocumentsByVector, listDocumentsByHotel } from '../models/HotelDocument.js';
 import { generateEmbedding } from '../services/embeddingService.js';
+import { expandQuery, calculateBoost } from '../services/queryExpansionService.js';
 
 /**
  * Search hotel documents using semantic search
@@ -43,16 +44,46 @@ export async function searchHotelDocuments(params, hotelId) {
 
     const topK = Math.min(Math.max(params.topK || 3, 1), 10); // Limit between 1 and 10
 
-    // Generate embedding for the search query
+    // Expand query with synonyms for better recall
+    console.log('[DocumentTools] Expanding query...');
+    const queryExpansion = expandQuery(params.query, {
+      maxSynonyms: 3,
+      includeOriginal: true,
+      languageMix: true
+    });
+
+    console.log('[DocumentTools] Query expansion:', {
+      original: queryExpansion.original,
+      expanded: queryExpansion.expanded,
+      hasExpansion: queryExpansion.hasExpansion
+    });
+
+    // Generate embedding for the expanded query
+    const queryText = queryExpansion.hasExpansion ? queryExpansion.expanded : params.query;
     console.log('[DocumentTools] Generating query embedding...');
-    const queryEmbedding = await generateEmbedding(params.query);
+    const queryEmbedding = await generateEmbedding(queryText);
 
     // Search documents using vector similarity
     console.log('[DocumentTools] Performing vector search...');
-    const results = await searchDocumentsByVector(hotelId, queryEmbedding, {
-      limit: topK,
+    let results = await searchDocumentsByVector(hotelId, queryEmbedding, {
+      limit: topK * 2, // Get more results for reranking
       documentTypes: params.documentTypes || []
     });
+
+    // Apply boost based on important terms
+    if (queryExpansion.importantTerms && queryExpansion.importantTerms.length > 0) {
+      console.log('[DocumentTools] Applying score boost for important terms...');
+      results = results.map(result => ({
+        ...result,
+        similarity: result.similarity * calculateBoost(result.textChunk, queryExpansion.importantTerms)
+      }));
+
+      // Re-sort by boosted scores
+      results.sort((a, b) => b.similarity - a.similarity);
+    }
+
+    // Limit to requested topK after reranking
+    results = results.slice(0, topK);
 
     // Format results for Claude
     const formattedResults = results.map((result, index) => ({
