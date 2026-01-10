@@ -202,8 +202,11 @@ async def search_hotel_documents(
         # Format results for Claude
         formatted_results = []
         for i, result in enumerate(top_results):
-            excerpt = result["textChunk"][:500]
-            if len(result["textChunk"]) > 500:
+            # OPTIMIZATION: Limit excerpt to 800 chars to avoid token limit
+            # Full chunk can be 1500 chars, but 10 chunks × 1500 = 15K chars = ~5K tokens
+            # This could push conversation over 200K token limit
+            excerpt = result["textChunk"][:800]
+            if len(result["textChunk"]) > 800:
                 excerpt += "..."
 
             formatted_results.append({
@@ -212,7 +215,8 @@ async def search_hotel_documents(
                 "documentType": result["documentType"],
                 "relevanceScore": round(result["similarity"], 2),
                 "excerpt": excerpt,
-                "fullText": result["textChunk"],
+                # REMOVED fullText to save tokens - excerpt should be enough
+                # "fullText": result["textChunk"],
                 "structuredData": result["structuredData"],
                 "tags": result["tags"]
             })
