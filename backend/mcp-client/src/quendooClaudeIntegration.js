@@ -270,9 +270,11 @@ export class QuendooClaudeIntegration {
         content: response.content
       });
 
-      // Keep history manageable (last 20 messages)
-      if (history.length > 20) {
-        history.splice(0, history.length - 20);
+      // Keep history manageable (last 8 messages = ~4 turns)
+      // CRITICAL: Document searches can add 10+ tool_result blocks with 800 chars each
+      // This can easily exceed 200K tokens with long conversations
+      if (history.length > 8) {
+        history.splice(0, history.length - 8);
       }
 
       return {
@@ -604,9 +606,10 @@ export class QuendooClaudeIntegration {
       console.warn('[Quendoo] Multi-tool loop reached maximum iterations');
     }
 
-    // Keep history manageable
-    if (history.length > 20) {
-      history.splice(0, history.length - 20);
+    // Keep history manageable (last 8 messages = ~4 turns)
+    // CRITICAL: Document searches can add 10+ tool_result blocks with 800 chars each
+    if (history.length > 8) {
+      history.splice(0, history.length - 8);
     }
 
     // Extract and filter the final response
