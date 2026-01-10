@@ -159,27 +159,26 @@ async def search_hotel_documents(
         for doc in docs_snapshot:
             data = doc.to_dict()
 
-            # Decode embeddings from base64
-            if not data.get("embeddingsEncoded"):
-                continue
-
+            # UPDATED: Read chunks from subcollection (new format)
+            # Old format used textChunks array in main document, but we moved to subcollection
+            # to avoid Firestore's 10MB document size limit
             try:
-                decoded_string = base64.b64decode(data["embeddingsEncoded"]).decode("utf-8")
-                embeddings = json.loads(decoded_string)
-            except Exception as e:
-                print(f"[DocumentService] Failed to decode embeddings for doc {doc.id}: {e}")
-                continue
+                chunks_ref = doc.reference.collection("chunks")
+                chunks_snapshot = chunks_ref.stream()
 
-            # Calculate similarity for each chunk
-            if embeddings and isinstance(embeddings, list):
-                for chunk_index, embedding in enumerate(embeddings):
-                    if not isinstance(embedding, list):
+                for chunk_doc in chunks_snapshot:
+                    chunk_data = chunk_doc.to_dict()
+
+                    # Get embedding and text from chunk
+                    embedding = chunk_data.get("embedding")
+                    text_chunk = chunk_data.get("text", "")
+                    chunk_index = chunk_data.get("chunkIndex", 0)
+
+                    if not embedding or not isinstance(embedding, list):
                         continue
 
+                    # Calculate similarity
                     similarity = calculate_cosine_similarity(query_embedding, embedding)
-
-                    text_chunks = data.get("textChunks", [])
-                    text_chunk = text_chunks[chunk_index] if chunk_index < len(text_chunks) else ""
 
                     results.append({
                         "documentId": doc.id,
@@ -191,6 +190,10 @@ async def search_hotel_documents(
                         "structuredData": data.get("structuredData", {}),
                         "tags": data.get("tags", [])
                     })
+
+            except Exception as e:
+                print(f"[DocumentService] Failed to read chunks for doc {doc.id}: {e}")
+                continue
 
         # Sort by similarity (highest first) and take top K
         results.sort(key=lambda x: x["similarity"], reverse=True)
