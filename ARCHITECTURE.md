@@ -26,7 +26,7 @@
 │  Backend (Node.js + Express)                            │
 │  - Local dev: http://localhost:3100                     │
 │  - Production: https://quendoo-backend-*.run.app        │
-│  - Current revision: quendoo-backend-00113-52h          │
+│  - Current revision: quendoo-backend-00114-vfc          │
 │                                                          │
 │  Routes:                                                 │
 │  - POST /chat/quendoo - Chat with Claude AI             │
@@ -114,7 +114,7 @@ npm start
 ```bash
 cd backend/mcp-client
 gcloud run deploy quendoo-backend --source . --region us-central1 --project quendoo-ai-dashboard
-# Current revision: quendoo-backend-00067-q24
+# Current revision: quendoo-backend-00114-vfc
 ```
 
 **Environment variables (.env):**
@@ -181,10 +181,18 @@ CMD python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 7. `ack_booking` - Acknowledge booking
 8. `post_room_assignment` - Assign rooms
 9. `post_external_property_data` - External property data
-10. `make_call` - Voice call automation
+10. `make_call` - Voice call automation (multilingual with 20+ languages)
 11. `send_quendoo_email` - Send email
 12. `search_hotel_documents` - Semantic search in uploaded hotel documents (RAG)
 13. `list_hotel_documents` - List all uploaded documents for the hotel
+
+**Document Processing (RAG System):**
+- Supports: PDF, DOCX, Excel (XLSX/XLS), Images (JPG/PNG)
+- Excel: Converts sheets to markdown tables for structured data
+- Images: OCR using Google Cloud Vision API
+- Text extraction, chunking, and vector embeddings
+- Semantic search using Vertex AI text-embedding-004
+- Storage: Google Cloud Storage + Firestore with embeddings
 
 ---
 

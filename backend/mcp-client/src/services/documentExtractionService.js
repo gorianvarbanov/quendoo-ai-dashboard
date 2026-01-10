@@ -1,10 +1,12 @@
 /**
- * Document Extraction Service - Extract and chunk text from PDF/DOCX files
- * Supports: PDF, DOCX
+ * Document Extraction Service - Extract and chunk text from documents
+ * Supports: PDF, DOCX, XLSX, XLS, JPG, PNG
  */
 
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
+import XLSX from 'xlsx';
+import vision from '@google-cloud/vision';
 import fs from 'fs/promises';
 
 /**
@@ -24,6 +26,16 @@ export async function extractTextFromFile(filePath, mimeType) {
       mimeType === 'application/msword'
     ) {
       return await extractTextFromDOCX(filePath);
+    } else if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      mimeType === 'application/vnd.ms-excel'
+    ) {
+      return await extractTextFromExcel(filePath);
+    } else if (
+      mimeType === 'image/jpeg' ||
+      mimeType === 'image/png'
+    ) {
+      return await extractTextFromImage(filePath);
     } else {
       throw new Error(`Unsupported file type: ${mimeType}`);
     }
@@ -63,6 +75,113 @@ async function extractTextFromDOCX(filePath) {
     console.error('[DocumentExtraction] Error parsing DOCX:', error);
     throw new Error(`Failed to parse DOCX: ${error.message}`);
   }
+}
+
+/**
+ * Extract text from Excel file (XLSX/XLS)
+ * Converts sheets to markdown tables for better readability
+ * @param {string} filePath - Path to Excel file
+ * @returns {Promise<string>} - Extracted text in markdown format
+ */
+async function extractTextFromExcel(filePath) {
+  try {
+    const dataBuffer = await fs.readFile(filePath);
+    const workbook = XLSX.read(dataBuffer, { type: 'buffer' });
+
+    let fullText = '';
+
+    // Process each sheet
+    workbook.SheetNames.forEach((sheetName, index) => {
+      const sheet = workbook.Sheets[sheetName];
+
+      // Add sheet header
+      fullText += `\n## Sheet: ${sheetName}\n\n`;
+
+      // Convert to JSON array (array of arrays)
+      const data = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      if (data.length === 0) {
+        fullText += '(Empty sheet)\n';
+        return;
+      }
+
+      // Convert to markdown table
+      fullText += convertArrayToMarkdownTable(data);
+      fullText += '\n';
+    });
+
+    return fullText;
+  } catch (error) {
+    console.error('[DocumentExtraction] Error parsing Excel:', error);
+    throw new Error(`Failed to parse Excel: ${error.message}`);
+  }
+}
+
+/**
+ * Extract text from image using Google Cloud Vision API (OCR)
+ * @param {string} filePath - Path to image file
+ * @returns {Promise<string>} - Extracted text from image
+ */
+async function extractTextFromImage(filePath) {
+  try {
+    // Initialize Vision client
+    const client = new vision.ImageAnnotatorClient();
+
+    // Read image file
+    const imageBuffer = await fs.readFile(filePath);
+
+    // Perform text detection
+    const [result] = await client.textDetection({
+      image: { content: imageBuffer }
+    });
+
+    const detections = result.textAnnotations;
+
+    if (!detections || detections.length === 0) {
+      return '(No text detected in image)';
+    }
+
+    // First annotation contains the full text
+    const fullText = detections[0].description || '';
+
+    console.log(`[DocumentExtraction] Extracted ${fullText.length} characters from image via OCR`);
+
+    return fullText;
+  } catch (error) {
+    console.error('[DocumentExtraction] Error performing OCR:', error);
+    throw new Error(`Failed to perform OCR: ${error.message}`);
+  }
+}
+
+/**
+ * Convert 2D array to markdown table
+ * @param {Array<Array>} data - 2D array of data
+ * @returns {string} - Markdown table string
+ */
+function convertArrayToMarkdownTable(data) {
+  if (data.length === 0) return '';
+
+  let markdown = '';
+
+  // Header row
+  const headers = data[0];
+  markdown += '| ' + headers.map(h => String(h || '').trim()).join(' | ') + ' |\n';
+
+  // Separator row
+  markdown += '| ' + headers.map(() => '---').join(' | ') + ' |\n';
+
+  // Data rows
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    // Ensure row has same length as headers
+    const paddedRow = [...row];
+    while (paddedRow.length < headers.length) {
+      paddedRow.push('');
+    }
+    markdown += '| ' + paddedRow.slice(0, headers.length).map(cell => String(cell || '').trim()).join(' | ') + ' |\n';
+  }
+
+  return markdown;
 }
 
 /**

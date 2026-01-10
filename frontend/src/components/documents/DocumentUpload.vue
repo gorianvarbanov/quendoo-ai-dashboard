@@ -32,15 +32,34 @@ function handleFileChange(event) {
   const selectedFile = event.target.files[0]
   if (selectedFile) {
     // Validate file type
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword']
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.ms-excel', // XLS
+      'image/jpeg', // JPG
+      'image/png' // PNG
+    ]
     if (!allowedTypes.includes(selectedFile.type)) {
-      error.value = 'Only PDF and DOCX files are allowed'
+      error.value = 'Only PDF, DOCX, Excel (XLSX/XLS), and Image (JPG/PNG) files are allowed'
       file.value = null
       return
     }
 
-    // Validate file size (10 MB)
-    if (selectedFile.size > 10 * 1024 * 1024) {
+    // Validate file size (20 MB for Excel, 5 MB for images, 10 MB for others)
+    const isImage = selectedFile.type === 'image/jpeg' || selectedFile.type === 'image/png'
+    const isExcel = selectedFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || selectedFile.type === 'application/vnd.ms-excel'
+
+    if (isImage && selectedFile.size > 5 * 1024 * 1024) {
+      error.value = 'Image files must be less than 5 MB'
+      file.value = null
+      return
+    } else if (isExcel && selectedFile.size > 20 * 1024 * 1024) {
+      error.value = 'Excel files must be less than 20 MB'
+      file.value = null
+      return
+    } else if (!isImage && !isExcel && selectedFile.size > 10 * 1024 * 1024) {
       error.value = 'File size must be less than 10 MB'
       file.value = null
       return
@@ -131,14 +150,14 @@ function resetForm() {
           <v-file-input
             v-model="file"
             label="Select Document"
-            accept=".pdf,.docx,.doc"
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.jpeg,.png"
             prepend-icon="mdi-paperclip"
             variant="outlined"
             density="comfortable"
             show-size
             :disabled="uploading"
             @change="handleFileChange"
-            hint="PDF or DOCX files only, max 10 MB"
+            hint="PDF, DOCX, Excel, or Image files. Max: 20MB (Excel), 5MB (Images), 10MB (Others)"
             persistent-hint
           />
         </v-col>

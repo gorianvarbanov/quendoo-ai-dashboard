@@ -27,20 +27,29 @@ const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'quendoo-hotel-documents';
 const upload = multer({
   dest: os.tmpdir(),
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10 MB limit
+    fileSize: 20 * 1024 * 1024 // 20 MB limit (for Excel files)
   },
   fileFilter: (req, file, cb) => {
-    // Only allow PDF and DOCX files
+    // Allow PDF, DOCX, Excel, and Images
     const allowedMimeTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword'
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.ms-excel', // XLS
+      'image/jpeg', // JPG
+      'image/png' // PNG
     ];
 
     if (allowedMimeTypes.includes(file.mimetype)) {
-      cb(null, true);
+      // Additional size validation for images (5MB max)
+      if ((file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') && req.headers['content-length'] > 5 * 1024 * 1024) {
+        cb(new Error('Image files must be less than 5 MB.'));
+      } else {
+        cb(null, true);
+      }
     } else {
-      cb(new Error('Invalid file type. Only PDF and DOCX files are allowed.'));
+      cb(new Error('Invalid file type. Allowed: PDF, DOCX, XLSX, XLS, JPG, PNG.'));
     }
   }
 });
