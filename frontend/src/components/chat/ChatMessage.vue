@@ -190,6 +190,19 @@
         </v-btn>
       </div>
 
+      <!-- Excel Query Results - View Button -->
+      <div v-if="hasExcelQuery && excelQueryData && excelQueryData.resultsCount > 0 && !isUser && !isStreaming" class="view-details-button">
+        <v-btn
+          variant="outlined"
+          size="small"
+          prepend-icon="mdi-file-table-box-multiple"
+          color="primary"
+          @click="openVisualizationDrawer('excel_results', excelQueryData.results.map(r => r.data || r.rowData))"
+        >
+          Виж резултати от Excel ({{ excelQueryData.resultsCount }})
+        </v-btn>
+      </div>
+
       <!-- Table Viewer Button (shown when tables detected and typing is complete) -->
       <div v-if="hasTable && !isUser && !isStreaming && !isTyping" class="table-viewer-button">
         <v-btn
@@ -631,6 +644,48 @@ const bookingOffersData = computed(() => {
 
   // Unwrap MCP format
   return unwrapMCPResult(offersTool.result)
+})
+
+// Detect if query_excel_data tool was used
+const hasExcelQuery = computed(() => {
+  if (!toolsUsed.value || toolsUsed.value.length === 0) return false
+  return toolsUsed.value.some(tool => tool.name === 'query_excel_data' && tool.result)
+})
+
+// Get Excel query data with MCP unwrapping
+const excelQueryData = computed(() => {
+  if (!hasExcelQuery.value) return null
+  const excelTool = toolsUsed.value.find(tool => tool.name === 'query_excel_data' && tool.result)
+  if (!excelTool) return null
+
+  console.log('[ChatMessage] query_excel_data tool found:', excelTool)
+
+  // Unwrap MCP format
+  const unwrapped = unwrapMCPResult(excelTool.result)
+  console.log('[ChatMessage] Unwrapped Excel data:', unwrapped)
+
+  return unwrapped
+})
+
+// Extract headers from Excel results
+const excelHeaders = computed(() => {
+  if (!excelQueryData.value || !excelQueryData.value.results || excelQueryData.value.results.length === 0) {
+    return []
+  }
+
+  // Get keys from first result's data or rowData (Python returns 'data', old format uses 'rowData')
+  const firstRow = excelQueryData.value.results[0]
+  const rowData = firstRow?.data || firstRow?.rowData
+
+  if (rowData && typeof rowData === 'object') {
+    return Object.keys(rowData).map(key => ({
+      title: key,
+      key: key,
+      sortable: true
+    }))
+  }
+
+  return []
 })
 
 // Room gallery state
@@ -2469,6 +2524,25 @@ const formattedContent = computed(() => {
 .view-details-button {
   margin-top: 12px;
   margin-bottom: 8px;
+}
+
+/* Excel Results Card Styles */
+.excel-results-card {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+.excel-data-table {
+  background-color: transparent;
+}
+
+.excel-raw-data {
+  background-color: rgba(var(--v-theme-surface-variant), 0.3);
+  border-radius: 4px;
+  padding: 12px;
+  font-size: 12px;
+  overflow-x: auto;
+  max-height: 300px;
 }
 
 </style>

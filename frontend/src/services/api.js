@@ -22,8 +22,8 @@ apiClient.interceptors.request.use(
       const hotelToken = localStorage.getItem('hotelToken')
       const adminToken = localStorage.getItem('quendoo-admin-token')
 
-      // Hotel token takes precedence for chat endpoints
-      if (hotelToken && (config.url.includes('/chat/') || config.url.includes('/conversations'))) {
+      // Hotel token takes precedence for chat, conversations, documents, and tasks endpoints
+      if (hotelToken && (config.url.includes('/chat/') || config.url.includes('/conversations') || config.url.includes('/documents') || config.url.includes('/tasks'))) {
         config.headers['Authorization'] = `Bearer ${hotelToken}`
       } else if (adminToken) {
         config.headers['Authorization'] = `Bearer ${adminToken}`
@@ -135,6 +135,9 @@ export const chatApi = {
     // Get hotel token for authentication
     const hotelToken = localStorage.getItem('hotelToken')
 
+    let completeCalled = false
+    let streamError = null
+
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -153,7 +156,9 @@ export const chatApi = {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorText = await response.text()
+        console.error('[SSE] HTTP error response:', errorText)
+        throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`)
       }
 
       const reader = response.body.getReader()
@@ -163,7 +168,10 @@ export const chatApi = {
 
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          console.log('[SSE] Stream ended')
+          break
+        }
 
         // Decode chunk and add to buffer
         buffer += decoder.decode(value, { stream: true })
@@ -173,9 +181,16 @@ export const chatApi = {
         buffer = lines.pop() || '' // Keep incomplete line in buffer
 
         for (const line of lines) {
+          if (line.trim() === '') continue  // Skip empty lines
+
           if (line.startsWith('data: ')) {
             try {
-              const data = JSON.parse(line.slice(6))
+              const jsonString = line.slice(6).trim()
+              if (!jsonString) continue
+
+              const data = JSON.parse(jsonString)
+
+              console.log('[SSE] Received event:', data.type)
 
               if (data.type === 'connected') {
                 console.log('[SSE] Connected to stream')
@@ -186,16 +201,31 @@ export const chatApi = {
               } else if (data.type === 'thinking') {
                 // Claude is thinking (optional callback)
               } else if (data.type === 'complete') {
+                completeCalled = true
+                console.log('[SSE] Stream completed successfully')
                 callbacks.onComplete?.(data.response)
               } else if (data.type === 'error') {
-                callbacks.onError?.(new Error(data.error))
+                streamError = new Error(data.error || 'Unknown streaming error')
+                console.error('[SSE] Server error:', streamError)
+                callbacks.onError?.(streamError)
+                return  // Exit early on server error
               }
             } catch (err) {
-              console.error('[SSE] Failed to parse event:', err, line)
+              console.error('[SSE] Failed to parse event:', err)
+              console.error('[SSE] Problematic line:', line)
+              streamError = new Error(`Stream parsing failed: ${err.message}`)
             }
           }
         }
       }
+
+      // Check if stream completed successfully
+      if (!completeCalled && !streamError) {
+        streamError = new Error('Stream ended without completion event')
+        console.error('[SSE] Stream incomplete - no completion event received')
+        callbacks.onError?.(streamError)
+      }
+
     } catch (error) {
       console.error('[SSE] Connection error:', error)
       callbacks.onError?.(error)

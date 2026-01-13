@@ -145,6 +145,23 @@ function getDocumentIcon(type) {
   return icons[type] || 'mdi-file'
 }
 
+// Check if filename has encoding issues (contains replacement characters)
+function hasEncodingIssue(fileName) {
+  return fileName && fileName.includes('�')
+}
+
+// Clean filename for display - show warning prefix if encoding is broken
+function cleanFileName(fileName) {
+  if (!fileName) return 'Unknown'
+
+  if (hasEncodingIssue(fileName)) {
+    // Replace sequences of � with ellipsis for better readability
+    return fileName.replace(/�+/g, '...')
+  }
+
+  return fileName
+}
+
 defineExpose({ loadDocuments })
 </script>
 
@@ -222,7 +239,25 @@ defineExpose({ loadDocuments })
             </v-avatar>
           </template>
 
-          <v-list-item-title>{{ doc.fileName }}</v-list-item-title>
+          <v-list-item-title>
+            <div class="d-flex align-center gap-2">
+              <span>{{ cleanFileName(doc.fileName) }}</span>
+              <v-tooltip
+                v-if="hasEncodingIssue(doc.fileName)"
+                text="Този файл е качен с проблем в кодирането на името. Препоръчваме да го изтриеш и качиш отново за правилно показване."
+                location="top"
+              >
+                <template v-slot:activator="{ props }">
+                  <v-icon
+                    icon="mdi-alert-circle"
+                    size="small"
+                    color="warning"
+                    v-bind="props"
+                  ></v-icon>
+                </template>
+              </v-tooltip>
+            </div>
+          </v-list-item-title>
 
           <v-list-item-subtitle>
             <div class="d-flex flex-column gap-1 mt-1">

@@ -5,6 +5,9 @@ pydantic==2.9.2
 pydantic-settings==2.6.0
 
 
+# AI / LLM (using Vertex AI for Claude access)
+anthropic[vertex]==0.40.0
+
 # Database
 sqlalchemy==2.0.36
 alembic==1.14.0
@@ -12,6 +15,7 @@ alembic==1.14.0
 # Google Cloud & Firebase (for document RAG)
 google-cloud-firestore==2.19.0
 google-cloud-aiplatform==1.73.0
+google-cloud-secret-manager==2.21.1
 firebase-admin==6.6.0
 
 # Encryption
@@ -20,6 +24,10 @@ cryptography==44.0.0
 # HTTP Client
 httpx==0.28.1
 aiohttp==3.11.10
+
+# HTML/XML Parsing (for web scraping)
+beautifulsoup4==4.12.3
+lxml==5.1.0
 
 # Authentication
 pyjwt==2.10.1

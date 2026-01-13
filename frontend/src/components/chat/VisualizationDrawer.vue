@@ -239,6 +239,34 @@
         </div>
       </div>
 
+      <!-- Excel Results Table -->
+      <div v-if="visualizationType === 'excel_results' && visualizationData" class="excel-results-summary">
+        <div class="excel-table-wrapper">
+          <table class="excel-table">
+            <thead>
+              <tr>
+                <th v-for="(value, key) in visualizationData[0]" :key="key" class="table-header-cell">
+                  {{ key }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, idx) in visualizationData.slice(0, 50)" :key="idx" class="table-row">
+                <td v-for="(value, key) in row" :key="key" class="table-cell">
+                  {{ formatExcelCellValue(value) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-if="visualizationData.length > 50" class="excel-footer">
+          <v-chip size="small" color="grey" variant="outlined">
+            Показани първите 50 от {{ visualizationData.length }} резултата
+          </v-chip>
+        </div>
+      </div>
+
       <!-- Room Cards (Airbnb-style) -->
       <div v-if="visualizationType === 'room_cards' && visualizationData" class="room-cards-container">
         <div v-for="(room, roomIndex) in visualizationData" :key="roomIndex" class="room-card">
@@ -320,7 +348,7 @@ const props = defineProps({
   visualizationType: {
     type: String,
     required: true,
-    validator: (value) => ['room_details', 'booking_offers', 'availability', 'bookings', 'room_cards'].includes(value)
+    validator: (value) => ['room_details', 'booking_offers', 'availability', 'bookings', 'room_cards', 'excel_results'].includes(value)
   },
   visualizationData: {
     type: [Object, Array],
@@ -341,7 +369,8 @@ const drawerTitle = computed(() => {
     booking_offers: 'Налични оферти',
     availability: 'Наличности',
     bookings: 'Резервации',
-    room_cards: 'Галерия на стаите'
+    room_cards: 'Галерия на стаите',
+    excel_results: 'Резултати от Excel'
   }
   return titles[props.visualizationType] || 'Детайли'
 })
@@ -481,6 +510,30 @@ function getPaymentStatusLabel(status) {
     'CANCELLED': 'Отменена'
   }
   return labelMap[status] || status
+}
+
+// Format Excel cell value for display
+function formatExcelCellValue(value) {
+  if (value === null || value === undefined) return '-'
+  if (typeof value === 'boolean') return value ? 'Да' : 'Не'
+  if (typeof value === 'number') {
+    // Check if it's a date serial number (Excel dates are numbers > 40000)
+    if (value > 40000 && value < 60000) {
+      try {
+        const date = new Date((value - 25569) * 86400 * 1000)
+        return date.toLocaleDateString('bg-BG')
+      } catch {
+        return value
+      }
+    }
+    return value
+  }
+  if (typeof value === 'string') {
+    // Truncate very long strings
+    if (value.length > 100) return value.substring(0, 97) + '...'
+    return value
+  }
+  return String(value)
 }
 </script>
 
@@ -853,6 +906,48 @@ function getPaymentStatusLabel(status) {
 }
 
 .bookings-footer {
+  margin-top: 16px;
+  text-align: center;
+}
+
+/* Excel Results Table Styles */
+.excel-results-summary {
+  width: 100%;
+}
+
+.excel-table-wrapper {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgb(var(--v-theme-surface));
+  font-size: 0.9rem;
+}
+
+.excel-table thead {
+  background: rgba(var(--v-theme-primary), 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.excel-table thead th {
+  font-weight: 600;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.excel-table tbody tr:hover {
+  background: rgba(var(--v-theme-primary), 0.04);
+}
+
+.excel-footer {
   margin-top: 16px;
   text-align: center;
 }

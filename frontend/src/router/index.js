@@ -36,6 +36,20 @@ const router = createRouter({
         }
       }
     },
+    {
+      path: '/tasks',
+      name: 'tasks',
+      component: () => import('../views/TasksView.vue'),
+      beforeEnter: (to, from, next) => {
+        const hotelToken = localStorage.getItem('hotelToken')
+        if (!hotelToken) {
+          // No hotel token - redirect to login
+          next('/login')
+        } else {
+          next()
+        }
+      }
+    },
     // Hotel authentication
     {
       path: '/login',

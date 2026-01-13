@@ -202,11 +202,12 @@ async def search_hotel_documents(
         # Format results for Claude
         formatted_results = []
         for i, result in enumerate(top_results):
-            # OPTIMIZATION: Limit excerpt to 800 chars to avoid token limit
-            # Full chunk can be 1500 chars, but 10 chunks × 1500 = 15K chars = ~5K tokens
-            # This could push conversation over 200K token limit
-            excerpt = result["textChunk"][:800]
-            if len(result["textChunk"]) > 800:
+            # OPTIMIZATION: Limit excerpt to 500 chars to avoid token limit
+            # Analysis shows: 500 chars = ~143 tokens per result
+            # With 3 results: 143 × 3 = ~429 tokens (vs 590 tokens at 800 chars)
+            # This is a 40% reduction in tool result size
+            excerpt = result["textChunk"][:500]
+            if len(result["textChunk"]) > 500:
                 excerpt += "..."
 
             formatted_results.append({
@@ -328,6 +329,267 @@ async def list_hotel_documents(
 
     except Exception as e:
         print(f"[DocumentService] Error listing documents: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+async def query_excel_structured(
+    hotel_id: str,
+    query: str,
+    file_name: Optional[str] = None,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    Query structured Excel data with intelligent parsing for numeric/specific value queries
+
+    Args:
+        hotel_id: Hotel ID from JWT token
+        query: Natural language query (e.g., "най-високи номера", "резервация 442231")
+        file_name: Optional specific Excel filename
+        limit: Maximum results to return
+
+    Returns:
+        Filtered and sorted Excel rows based on query intent
+    """
+    try:
+        print(f"[ExcelQuery] ===== QUERY START =====")
+        print(f"[ExcelQuery] Query: '{query}'")
+        print(f"[ExcelQuery] Hotel ID: {hotel_id}")
+        print(f"[ExcelQuery] File name filter: {file_name}")
+        print(f"[ExcelQuery] Limit: {limit}")
+
+        # Get Excel documents from Firestore
+        docs_ref = db.collection(hotel_id).document("documents").collection("hotel_documents")
+
+        # Filter by filename if provided
+        if file_name:
+            docs_snapshot = docs_ref.where("fileName", "==", file_name).stream()
+        else:
+            docs_snapshot = docs_ref.stream()
+
+        # Filter only Excel documents
+        excel_docs = []
+        for doc in docs_snapshot:
+            data = doc.to_dict()
+            mime_type = data.get("mimeType", "")
+            if mime_type in [
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-excel"
+            ]:
+                excel_docs.append((doc.id, data))
+
+        if not excel_docs:
+            return {
+                "success": False,
+                "error": "No Excel files found in documents"
+            }
+
+        print(f"[ExcelQuery] Found {len(excel_docs)} Excel document(s)")
+
+        # Parse query intent
+        query_lower = query.lower()
+
+        # Detect query type
+        is_highest = any(word in query_lower for word in [
+            "най-високи", "най-висок", "highest", "maximum", "max", "максимал", "топ"
+        ])
+        is_lowest = any(word in query_lower for word in [
+            "най-ниски", "най-нисък", "lowest", "minimum", "min", "минимал"
+        ])
+        is_specific_value = any(char.isdigit() for char in query)  # Contains numbers
+
+        # Extract numbers from query for exact matching
+        import re
+        numbers_in_query = re.findall(r'\d+', query)
+
+        print(f"[ExcelQuery] Query intent detection:")
+        print(f"[ExcelQuery]   is_highest: {is_highest}")
+        print(f"[ExcelQuery]   is_lowest: {is_lowest}")
+        print(f"[ExcelQuery]   is_specific_value: {is_specific_value}")
+        print(f"[ExcelQuery]   numbers_in_query: {numbers_in_query}")
+
+        # Detect target column from query
+        column_keywords = {
+            "резервация": ["Резервация номер", "Reservation number", "ID", "Номер"],
+            "reservation": ["Резервация номер", "Reservation number", "ID"],
+            "номер": ["Резервация номер", "Reservation number", "ID", "Номер"],
+            "цена": ["Цена на нощувка", "Обща цена", "Price", "Total price"],
+            "price": ["Цена на нощувка", "Обща цена", "Price"],
+            "дата": ["Начална дата", "Крайна дата", "Date", "Created At"],
+            "date": ["Начална дата", "Крайна дата", "Date"],
+            "име": ["Име", "Фамилия", "Name", "Guest"],
+            "name": ["Име", "Фамилия", "Name"],
+            "статус": ["Статус", "Status"],
+            "status": ["Статус", "Status"]
+        }
+
+        # Find target column
+        target_columns = None
+        for keyword, possible_cols in column_keywords.items():
+            if keyword in query_lower:
+                target_columns = possible_cols
+                break
+
+        # Default to reservation number if not specified
+        if not target_columns:
+            target_columns = ["Резервация номер", "Reservation number", "ID", "Номер"]
+
+        print(f"[ExcelQuery] Target columns: {target_columns}")
+
+        # Collect all matching rows from all Excel docs
+        all_results = []
+
+        for doc_id, data in excel_docs:
+            structured_data = data.get("structuredData", {})
+            excel_data = structured_data.get("excel", {})
+
+            # Excel data format from backend: { sheets: { "SheetName": { schema: [], records: [...], recordCount: N } } }
+            sheets = excel_data.get("sheets", {})
+
+            print(f"[ExcelQuery] Processing file: {data.get('fileName')}")
+            print(f"[ExcelQuery]   Sheets: {list(sheets.keys())}")
+
+            if not sheets:
+                print(f"[ExcelQuery] ❌ Skipping {data.get('fileName')} - no sheets in structured data")
+                continue
+
+            # Process first sheet (could process all sheets if needed)
+            sheet_name = list(sheets.keys())[0]
+            sheet_data = sheets[sheet_name]
+            records = sheet_data.get("records", [])
+
+            print(f"[ExcelQuery]   Sheet: {sheet_name}")
+            print(f"[ExcelQuery]   Records count: {len(records)}")
+
+            if not records or len(records) == 0:
+                print(f"[ExcelQuery] ❌ Skipping {data.get('fileName')} - no records in sheet")
+                continue
+
+            # Extract headers from first record keys
+            headers = list(records[0].keys()) if records else []
+            print(f"[ExcelQuery]   Headers count: {len(headers)}")
+            if headers:
+                print(f"[ExcelQuery]   First 5 headers: {headers[:5]}")
+
+            # Find the target column
+            matched_column = None
+            for possible_col in target_columns:
+                if possible_col in headers:
+                    matched_column = possible_col
+                    break
+
+            if matched_column is None:
+                print(f"[ExcelQuery] ⚠️ Column not found in {data.get('fileName')}, using first column")
+                matched_column = headers[0] if headers else None
+
+            if not matched_column:
+                print(f"[ExcelQuery] ❌ No valid column found")
+                continue
+
+            print(f"[ExcelQuery] ✅ Using column: '{matched_column}'")
+
+            # Process each record (records are dicts, not arrays)
+            for record in records:
+                value = record.get(matched_column)
+
+                # Try to extract numeric value for sorting
+                numeric_value = None
+                if value is not None:
+                    try:
+                        # Remove commas and convert to float
+                        numeric_value = float(str(value).replace(",", "").replace(" ", ""))
+                    except:
+                        pass
+
+                # Check if this row matches for specific value queries
+                matches_specific = False
+                if is_specific_value and numbers_in_query:
+                    value_str = str(value)
+                    for num in numbers_in_query:
+                        if num in value_str:
+                            matches_specific = True
+                            break
+
+                all_results.append({
+                    "fileName": data.get("fileName"),
+                    "column": matched_column,
+                    "value": value,
+                    "numericValue": numeric_value,
+                    "matchesSpecific": matches_specific,
+                    "rowData": record  # record is already a dict
+                })
+
+        print(f"[ExcelQuery] Collected {len(all_results)} total rows from all files")
+
+        # Filter for specific value queries
+        if is_specific_value and numbers_in_query:
+            before_filter = len(all_results)
+            all_results = [r for r in all_results if r["matchesSpecific"]]
+            print(f"[ExcelQuery] Filtered from {before_filter} to {len(all_results)} matching rows (looking for: {numbers_in_query})")
+
+        # Sort results based on query intent
+        if is_highest:
+            # Sort by numeric value descending (highest first)
+            all_results.sort(
+                key=lambda x: x["numericValue"] if x["numericValue"] is not None else float('-inf'),
+                reverse=True
+            )
+            print(f"[ExcelQuery] Sorted by highest values")
+        elif is_lowest:
+            # Sort by numeric value ascending (lowest first)
+            all_results.sort(
+                key=lambda x: x["numericValue"] if x["numericValue"] is not None else float('inf')
+            )
+            print(f"[ExcelQuery] Sorted by lowest values")
+
+        # Limit results
+        before_limit = len(all_results)
+        all_results = all_results[:limit]
+        print(f"[ExcelQuery] After limiting: {len(all_results)} results (from {before_limit})")
+
+        # Format output
+        formatted_results = []
+        for r in all_results:
+            formatted_results.append({
+                "fileName": r["fileName"],
+                "matchedColumn": r["column"],
+                "matchedValue": r["value"],
+                "data": r["rowData"]
+            })
+
+        # Generate summary
+        if not formatted_results:
+            summary = "No matching rows found in Excel files."
+            print(f"[ExcelQuery] ❌ No results to return")
+        else:
+            print(f"[ExcelQuery] ✅ Returning {len(formatted_results)} results")
+            summary = f"Found {len(formatted_results)} row(s) from Excel file(s). "
+            if is_highest:
+                summary += f"Showing highest values in column '{formatted_results[0]['matchedColumn']}'."
+            elif is_lowest:
+                summary += f"Showing lowest values in column '{formatted_results[0]['matchedColumn']}'."
+            elif is_specific_value:
+                summary += f"Showing rows matching: {', '.join(numbers_in_query)}."
+            else:
+                summary += f"Showing results from column '{formatted_results[0]['matchedColumn']}'."
+
+        print(f"[ExcelQuery] ===== QUERY END =====")
+
+        return {
+            "success": True,
+            "query": query,
+            "column": formatted_results[0]["matchedColumn"] if formatted_results else None,
+            "resultsCount": len(formatted_results),
+            "results": formatted_results,
+            "summary": summary
+        }
+
+    except Exception as e:
+        print(f"[ExcelQuery] ❌❌❌ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "error": str(e)

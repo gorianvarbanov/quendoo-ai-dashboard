@@ -35,7 +35,17 @@
           block
           class="mt-2"
         >
-          Documents
+          {{ uiTranslations.documents }}
+        </v-btn>
+
+        <v-btn
+          variant="text"
+          prepend-icon="mdi-calendar-clock"
+          @click="goToTasks"
+          block
+          class="mt-2"
+        >
+          {{ uiTranslations.tasks }}
         </v-btn>
       </div>
 
@@ -158,17 +168,55 @@
         </div>
       </div>
 
-      <!-- Error Alert -->
+      <!-- Error Alert with Action Buttons -->
       <v-alert
         v-if="error"
         type="error"
         closable
         @click:close="clearError"
         class="error-alert"
-        density="compact"
+        density="comfortable"
         variant="tonal"
       >
-        {{ error }}
+        <div class="d-flex align-center justify-space-between">
+          <div class="flex-grow-1">
+            <div class="font-weight-bold mb-1">{{ error }}</div>
+            <div v-if="errorSuggestion" class="text-caption text-medium-emphasis">
+              {{ errorSuggestion }}
+            </div>
+          </div>
+
+          <!-- Action buttons based on error type -->
+          <div v-if="hasErrorActions" class="d-flex gap-2 ml-4 flex-shrink-0">
+            <v-btn
+              v-if="showNewConversationButton"
+              size="small"
+              variant="outlined"
+              prepend-icon="mdi-plus"
+              @click="handleNewConversationFromError"
+            >
+              Нов разговор
+            </v-btn>
+            <v-btn
+              v-if="showRetryButton"
+              size="small"
+              variant="outlined"
+              prepend-icon="mdi-refresh"
+              @click="retryLastMessage"
+            >
+              Опитай отново
+            </v-btn>
+            <v-btn
+              v-if="showClearHistoryButton"
+              size="small"
+              variant="outlined"
+              prepend-icon="mdi-broom"
+              @click="confirmClearHistory"
+            >
+              Изчисти история
+            </v-btn>
+          </div>
+        </div>
       </v-alert>
 
       <!-- Message List -->
@@ -403,7 +451,8 @@ const availabilityPanelOpen = ref(false)
 const availabilityData = ref(null)
 
 // AI Assistant Settings state
-const language = ref('en')
+// Initialize language from localStorage if available
+const language = ref(localStorage.getItem('language') || 'en')
 const customPrompt = ref('')
 const originalLanguage = ref('en')
 const originalCustomPrompt = ref('')
@@ -423,6 +472,15 @@ const languages = [
   { label: 'Македонски', value: 'mk' },
   { label: 'Română', value: 'ro' }
 ]
+
+// Watch for language changes and propagate to localStorage and other components
+watch(language, (newLanguage) => {
+  console.log('[ChatContainer] Language changed to:', newLanguage)
+  // Update localStorage
+  localStorage.setItem('language', newLanguage)
+  // Emit custom event for same-tab components to listen
+  window.dispatchEvent(new CustomEvent('languageChanged', { detail: newLanguage }))
+})
 
 // Computed translations based on selected language
 const uiTranslations = computed(() => {
@@ -450,7 +508,10 @@ const uiTranslations = computed(() => {
     typeMessage: t('typeMessage', lang),
     noConversationsFound: t('noConversationsFound', lang),
     tryDifferentSearch: t('tryDifferentSearch', lang),
-    searchResults: t('searchResults', lang)
+    searchResults: t('searchResults', lang),
+    // Navigation
+    documents: t('documents', lang),
+    tasks: t('tasks', lang)
   }
 })
 
@@ -471,6 +532,10 @@ const goToRegistration = () => {
 
 const goToDocuments = () => {
   router.push('/documents')
+}
+
+const goToTasks = () => {
+  router.push('/tasks')
 }
 
 const goToSettings = () => {
@@ -520,6 +585,51 @@ const isStreaming = computed(() => chatStore.isStreaming)
 const streamingMessage = computed(() => chatStore.streamingMessage)
 const error = computed(() => chatStore.error)
 
+// Error handling computed properties
+const errorSuggestion = computed(() => {
+  if (!error.value) return null
+
+  const errorText = error.value.toLowerCase()
+
+  if (errorText.includes('твърде много заявки')) {
+    return 'Моля изчакай 1-2 минути преди да опиташ отново.'
+  }
+  if (errorText.includes('интернет') || errorText.includes('свържа')) {
+    return 'Провери интернет връзката си и опитай отново.'
+  }
+  if (errorText.includes('история')) {
+    return 'Историята на разговора е развалена. Започни нов разговор за да продължиш.'
+  }
+
+  return null
+})
+
+const showNewConversationButton = computed(() => {
+  if (!error.value) return false
+  const errorText = error.value.toLowerCase()
+  return errorText.includes('нов разговор') || errorText.includes('история')
+})
+
+const showRetryButton = computed(() => {
+  if (!error.value) return false
+  const errorText = error.value.toLowerCase()
+  return errorText.includes('опитай отново') ||
+         errorText.includes('интернет') ||
+         errorText.includes('сървър')
+})
+
+const showClearHistoryButton = computed(() => {
+  if (!error.value) return false
+  const errorText = error.value.toLowerCase()
+  return errorText.includes('история') && !errorText.includes('нов разговор')
+})
+
+const hasErrorActions = computed(() => {
+  return showNewConversationButton.value ||
+         showRetryButton.value ||
+         showClearHistoryButton.value
+})
+
 const recentConversations = computed(() => {
   return Array.from(chatStore.conversations.values())
     .filter(conv => {
@@ -546,6 +656,33 @@ async function selectConversation(id) {
 
 function clearError() {
   chatStore.clearError()
+}
+
+// Error action button handlers
+async function handleNewConversationFromError() {
+  clearError()
+  await handleNewConversation()
+}
+
+async function retryLastMessage() {
+  clearError()
+  // Get the last user message
+  const messages = currentMessages.value
+  const lastUserMessage = messages.slice().reverse().find(m => m.role === 'user')
+
+  if (lastUserMessage) {
+    // Resend the message
+    await chatStore.sendMessage(lastUserMessage.content)
+  }
+}
+
+async function confirmClearHistory() {
+  if (confirm('Сигурен ли си, че искаш да изчистиш историята? Това ще премахне старите съобщения, но ще запази разговора.')) {
+    clearError()
+    // TODO: Implement clear history endpoint in backend
+    // For now, just create a new conversation
+    await handleNewConversation()
+  }
 }
 
 // Search handler with debouncing

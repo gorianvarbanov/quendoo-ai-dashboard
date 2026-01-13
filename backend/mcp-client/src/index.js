@@ -490,6 +490,10 @@ app.use('/api/hotels', hotelRoutes);
 import documentRoutes from './routes/documents.js';
 app.use('/api/documents', documentRoutes);
 
+// Import and use scheduled tasks routes
+import tasksRoutes from './routes/tasks.js';
+app.use('/api/tasks', requireHotelAuth, tasksRoutes);
+
 /**
  * Admin Analytics Endpoints
  */
@@ -798,7 +802,7 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
     // Get Quendoo MCP server URL from header, fallback to environment, then to default
     let quendooUrl = req.headers['x-mcp-server-url']
       || process.env.MCP_SERVER_URL
-      || 'https://mcp-quendoo-server-222402522800.us-central1.run.app';
+      || 'https://mcp-quendoo-chatbot-222402522800.us-central1.run.app';
 
     // Ensure URL ends with /sse
     if (!quendooUrl.endsWith('/sse')) {
@@ -963,7 +967,15 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
         res.end();
       } catch (streamError) {
         console.error('[SSE] Stream error:', streamError);
-        res.write(`data: ${JSON.stringify({ type: 'error', error: 'Stream processing failed' })}\n\n`);
+        console.error('[SSE] Error stack:', streamError.stack);
+
+        // Send detailed error to client
+        const errorMessage = streamError.message || 'Unknown stream processing error';
+        res.write(`data: ${JSON.stringify({
+          type: 'error',
+          error: errorMessage,
+          details: process.env.NODE_ENV === 'development' ? streamError.stack : undefined
+        })}\n\n`);
         res.end();
         quendooIntegrations.delete(finalConversationId);
       }

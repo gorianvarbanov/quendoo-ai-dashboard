@@ -6,6 +6,10 @@ Tools are called with tenant's API key to ensure proper isolation
 from typing import Dict, Any
 import os
 import httpx
+from bs4 import BeautifulSoup
+from collections import defaultdict
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from app.quendoo.client import QuendooAPIClient
 
 
@@ -218,7 +222,7 @@ QUENDOO_TOOLS = [
     },
     {
         "name": "send_quendoo_email",
-        "description": "Send an email via Quendoo email service. Supports HTML content in the message body.",
+        "description": "Send an email via Quendoo email service. Supports both plain text and HTML content. Set html=true to send HTML formatted emails.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -232,7 +236,12 @@ QUENDOO_TOOLS = [
                 },
                 "message": {
                     "type": "string",
-                    "description": "Email body (supports HTML)"
+                    "description": "Email body content. If html=true, this should be valid HTML markup."
+                },
+                "html": {
+                    "type": "boolean",
+                    "description": "Set to true to send HTML formatted email. Default is false (plain text).",
+                    "default": False
                 }
             },
             "required": ["to", "subject", "message"]
@@ -280,6 +289,148 @@ QUENDOO_TOOLS = [
                 }
             }
         }
+    },
+    {
+        "name": "fetch_url",
+        "description": """Fetch and read content from a web URL (webpage, API endpoint, or document).
+
+Use this tool when you need to:
+- Read information from a specific web URL provided by the user
+- Check external websites, documentation, or policies
+- Retrieve data from public APIs or endpoints
+- Access online resources, reviews, or content
+- Verify information from external sources
+
+The tool will fetch the URL and return:
+- For HTML pages: Clean text content (extracted from HTML, without scripts/styles)
+- For JSON APIs: Parsed JSON data structure
+- For text files: Raw text content
+
+Important limitations:
+- Only publicly accessible URLs (no authentication)
+- Content limited to 10,000 characters to prevent token overflow
+- Maximum 10 requests per minute per hotel (rate limited)
+- Timeout: 30 seconds maximum
+- Private/local network URLs are blocked for security
+
+Security: This tool does NOT support authentication, cookies, or access to private pages. It only fetches public content.""",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The complete URL to fetch. Must start with http:// or https://. Examples: 'https://example.com', 'https://api.example.com/data', 'https://docs.example.com/policy.html'",
+                    "pattern": "^https?://"
+                },
+                "format": {
+                    "type": "string",
+                    "description": "Expected response format for proper parsing. Options: 'html' (default - extracts text from HTML pages), 'json' (parses JSON APIs), 'text' (raw text content). If not specified, auto-detects based on Content-Type header.",
+                    "enum": ["html", "json", "text"],
+                    "default": "html"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "Request timeout in seconds. Default: 10, minimum: 1, maximum: 30. Increase for slow servers.",
+                    "minimum": 1,
+                    "maximum": 30,
+                    "default": 10
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "analyze_data",
+        "description": """Analyze data using Claude AI and return formatted results based on specific criteria.
+
+Use this tool to:
+- Filter and analyze data from previous tool results
+- Format data according to specific requirements
+- Generate summaries and insights from raw data
+- Apply business logic and calculations
+
+Example use cases:
+- "Find dates with less than 5 available rooms"
+- "Calculate average occupancy for the month"
+- "Identify peak booking periods"
+- "Compare availability across room types"
+
+This tool takes the data from the previous step (using {RESULT} placeholder) and applies intelligent analysis using Claude AI.""",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string",
+                    "description": "The data to analyze (usually from previous step using {RESULT} placeholder)"
+                },
+                "instruction": {
+                    "type": "string",
+                    "description": "Natural language instruction for what analysis to perform. Examples: 'Show only dates with less than 5 available rooms', 'Calculate total availability per room type', 'Find the busiest week'"
+                },
+                "format": {
+                    "type": "string",
+                    "description": "Desired output format: 'text' (human-readable summary), 'json' (structured data), 'table' (markdown table), 'html_table' (HTML table for emails), 'list' (bulleted list). Default: 'text'",
+                    "enum": ["text", "json", "table", "html_table", "list"],
+                    "default": "text"
+                }
+            },
+            "required": ["data", "instruction"]
+        }
+    },
+    {
+        "name": "query_excel_data",
+        "description": """Query structured data from uploaded Excel files with intelligent filtering, sorting, and value extraction.
+
+Use this tool when users ask for SPECIFIC VALUES or NUMERIC QUERIES from Excel files:
+- Exact record lookups: "резервация 442231", "покажи номер 43"
+- Numeric ranges: "номера над 400000", "резервации между 100-200", "цени под 500 лв"
+- Min/Max values: "най-високи 3 номера", "най-ниски цени", "максимална цена"
+- Sorted results: "покажи топ 10 резервации", "сортирай по дата"
+- Specific field values: "всички резервации за януари", "гости от Sofia"
+
+This tool works directly with the structured Excel data (spreadsheet cells) and supports:
+- Exact value matching (IDs, names, numbers)
+- Numeric comparisons (greater than, less than, between)
+- Sorting by any column (ascending/descending for min/max)
+- Pattern matching (contains, starts with, date ranges)
+- Returns actual row data with all fields
+
+IMPORTANT: Use this tool instead of search_hotel_documents when:
+✅ Query mentions specific numbers or IDs
+✅ Query asks for highest/lowest/top/bottom values
+✅ Query asks for ranges or comparisons
+✅ User wants sorted or filtered Excel data
+
+Use search_hotel_documents instead when:
+❌ Query is about text content/meaning ("какви са условията?")
+❌ Query is semantic ("политика за отказ", "процедури")
+
+Examples:
+- "най-високи номера на резервации" → query_excel_data (numeric sort)
+- "резервация 442231" → query_excel_data (exact match)
+- "резервации над 400000" → query_excel_data (numeric filter)
+- "условия за cancellation" → search_hotel_documents (semantic)""",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Natural language query describing what to find in Excel files. Examples: 'най-високи 3 номера на резервации', 'резервация номер 442231', 'всички резервации за януари 2026', 'цени над 500 лв', 'покажи топ 5 по цена'"
+                },
+                "fileName": {
+                    "type": "string",
+                    "description": "Optional: specific Excel filename to query (e.g., 'export-2026.xlsx'). If omitted, searches all Excel files in the hotel's documents."
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of results to return. Default: 10 for lists, 3 for top/bottom queries, 1 for specific ID lookups.",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "default": 10
+                }
+            },
+            "required": ["query"]
+        }
     }
 ]
 
@@ -317,6 +468,47 @@ class AutomationClient:
             ) from exc
 
 
+# Helper function to convert markdown table to HTML
+def markdown_table_to_html(markdown_table: str) -> str:
+    """Convert a markdown table to a styled HTML table.
+
+    Args:
+        markdown_table: Markdown formatted table string
+
+    Returns:
+        HTML formatted table with inline CSS styling
+    """
+    lines = markdown_table.strip().split('\n')
+    if len(lines) < 2:
+        return markdown_table  # Not a table
+
+    html = ['<table style="border-collapse: collapse; width: 100%; font-family: Arial, sans-serif;">']
+
+    # Process header row
+    headers = [cell.strip() for cell in lines[0].split('|')[1:-1]]  # Remove empty first/last
+    html.append('  <thead>')
+    html.append('    <tr style="background-color: #4CAF50; color: white;">')
+    for header in headers:
+        html.append(f'      <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">{header}</th>')
+    html.append('    </tr>')
+    html.append('  </thead>')
+
+    # Skip separator line (line 1)
+    # Process data rows
+    html.append('  <tbody>')
+    for i, line in enumerate(lines[2:]):
+        cells = [cell.strip() for cell in line.split('|')[1:-1]]
+        row_style = 'background-color: #f2f2f2;' if i % 2 == 0 else 'background-color: white;'
+        html.append(f'    <tr style="{row_style}">')
+        for cell in cells:
+            html.append(f'      <td style="border: 1px solid #ddd; padding: 8px;">{cell}</td>')
+        html.append('    </tr>')
+    html.append('  </tbody>')
+
+    html.append('</table>')
+    return '\n'.join(html)
+
+
 # Email client for send_quendoo_email
 class EmailClient:
     """HTTP client for sending emails via Quendoo email service."""
@@ -326,8 +518,15 @@ class EmailClient:
     def __init__(self):
         self.api_key = os.getenv("EMAIL_API_KEY")
 
-    async def send_email(self, to: str, subject: str, message: str) -> Dict[str, Any]:
-        """Send an email via the Quendoo email cloud function."""
+    async def send_email(self, to: str, subject: str, message: str, html: bool = False) -> Dict[str, Any]:
+        """Send an email via the Quendoo email cloud function.
+
+        Args:
+            to: Recipient email address
+            subject: Email subject line
+            message: Email body content (HTML if html=True, plain text otherwise)
+            html: If True, send as HTML email. If False, send as plain text.
+        """
         if not self.api_key:
             raise ValueError("EMAIL_API_KEY environment variable is not set")
 
@@ -338,7 +537,8 @@ class EmailClient:
         payload = {
             "to": to,
             "subject": subject,
-            "message": message
+            "message": message,
+            "html": html  # Pass HTML flag to email service
         }
 
         try:
@@ -350,6 +550,228 @@ class EmailClient:
             raise RuntimeError(
                 f"Email request failed with status {exc.response.status_code}: {exc.response.text}"
             ) from exc
+
+
+# Rate limiter for web fetch
+class RateLimiter:
+    """Simple rate limiter to prevent abuse"""
+    def __init__(self, max_requests=10, window_minutes=1):
+        self.max_requests = max_requests
+        self.window = timedelta(minutes=window_minutes)
+        self.requests = defaultdict(list)
+
+    def check_limit(self, key: str) -> bool:
+        """Check if key is within rate limit"""
+        now = datetime.now()
+        # Clean old requests
+        self.requests[key] = [
+            req_time for req_time in self.requests[key]
+            if now - req_time < self.window
+        ]
+
+        # Check limit
+        if len(self.requests[key]) >= self.max_requests:
+            return False
+
+        # Add request
+        self.requests[key].append(now)
+        return True
+
+
+# Web fetch client
+class WebFetchService:
+    """
+    Service for fetching and parsing web content
+    Supports HTML, JSON, and plain text formats
+    """
+
+    # Blacklist for security
+    BLACKLISTED_DOMAINS = [
+        'localhost',
+        '127.0.0.1',
+        '0.0.0.0',
+        '192.168.',
+        '10.',
+        '172.16.',
+        '169.254.'  # Link-local
+    ]
+
+    def __init__(self):
+        self.rate_limiter = RateLimiter(max_requests=10, window_minutes=1)
+
+    def is_url_safe(self, url: str) -> tuple[bool, str]:
+        """Check if URL is safe to fetch"""
+        try:
+            parsed = urlparse(url)
+
+            # Must have scheme
+            if parsed.scheme not in ['http', 'https']:
+                return False, "Only HTTP/HTTPS URLs are allowed"
+
+            # Check blacklist
+            for blocked in self.BLACKLISTED_DOMAINS:
+                if blocked in parsed.netloc.lower():
+                    return False, "Private/local network URLs are not allowed"
+
+            return True, ""
+        except Exception as e:
+            return False, f"Invalid URL: {str(e)}"
+
+    async def fetch_url(
+        self,
+        url: str,
+        format: str = "html",
+        timeout: int = 10,
+        api_key: str = None
+    ) -> Dict[str, Any]:
+        """
+        Fetch content from a URL and parse based on format
+
+        Args:
+            url: URL to fetch
+            format: Expected format (html, json, text)
+            timeout: Request timeout in seconds
+            api_key: API key for rate limiting (optional)
+
+        Returns:
+            Dictionary with success, content, metadata, or error
+        """
+        try:
+            print(f"[WebFetch] Fetching URL: {url} (format: {format})")
+
+            # Rate limiting
+            rate_key = api_key or "default"
+            if not self.rate_limiter.check_limit(rate_key):
+                return {
+                    "success": False,
+                    "error": "Rate limit exceeded. Maximum 10 requests per minute."
+                }
+
+            # Security check
+            is_safe, error_msg = self.is_url_safe(url)
+            if not is_safe:
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
+
+            # Validate timeout
+            timeout = max(1, min(timeout, 30))
+
+            # Fetch content
+            async with httpx.AsyncClient(
+                timeout=timeout,
+                follow_redirects=True,
+                headers={
+                    'User-Agent': 'QuendooBot/1.0 (Hotel Management Assistant)'
+                }
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+
+            content_type = response.headers.get('content-type', '').lower()
+
+            # Parse based on format
+            if format == "json" or "application/json" in content_type:
+                try:
+                    parsed_content = response.json()
+                    return {
+                        "success": True,
+                        "url": url,
+                        "content": parsed_content,
+                        "contentType": content_type,
+                        "statusCode": response.status_code
+                    }
+                except Exception as e:
+                    return {
+                        "success": False,
+                        "error": f"Failed to parse JSON: {str(e)}"
+                    }
+
+            elif format == "html" or "text/html" in content_type:
+                # Extract text from HTML using BeautifulSoup
+                soup = BeautifulSoup(response.text, 'html.parser')
+
+                # Remove script and style elements
+                for element in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
+                    element.decompose()
+
+                # Get text
+                text = soup.get_text(separator='\n', strip=True)
+
+                # Clean up whitespace
+                lines = [line.strip() for line in text.splitlines() if line.strip()]
+                cleaned_text = '\n'.join(lines)
+
+                # Limit to 10,000 characters to avoid token explosion
+                if len(cleaned_text) > 10000:
+                    cleaned_text = cleaned_text[:10000] + "\n\n[Content truncated - page was too long]"
+
+                return {
+                    "success": True,
+                    "url": url,
+                    "content": cleaned_text,
+                    "contentType": content_type,
+                    "statusCode": response.status_code,
+                    "title": soup.title.string if soup.title else None
+                }
+
+            elif format == "text" or "text/plain" in content_type:
+                # Return raw text
+                text = response.text
+
+                # Limit to 10,000 characters
+                if len(text) > 10000:
+                    text = text[:10000] + "\n\n[Content truncated]"
+
+                return {
+                    "success": True,
+                    "url": url,
+                    "content": text,
+                    "contentType": content_type,
+                    "statusCode": response.status_code
+                }
+
+            else:
+                # Unknown format, try to return as text
+                text = response.text[:10000]
+                return {
+                    "success": True,
+                    "url": url,
+                    "content": text,
+                    "contentType": content_type,
+                    "statusCode": response.status_code,
+                    "warning": f"Unknown content type: {content_type}"
+                }
+
+        except httpx.TimeoutException:
+            return {
+                "success": False,
+                "error": f"Request timed out after {timeout} seconds"
+            }
+        except httpx.HTTPStatusError as e:
+            return {
+                "success": False,
+                "error": f"HTTP error: {e.response.status_code}",
+                "statusCode": e.response.status_code
+            }
+        except Exception as e:
+            print(f"[WebFetch] Error fetching URL: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to fetch URL: {str(e)}"
+            }
+
+
+# Global instances
+_web_fetch_service = None
+
+def get_web_fetch_service() -> WebFetchService:
+    """Get or create WebFetchService singleton"""
+    global _web_fetch_service
+    if _web_fetch_service is None:
+        _web_fetch_service = WebFetchService()
+    return _web_fetch_service
 
 
 async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_key: str) -> Dict[str, Any]:
@@ -472,7 +894,8 @@ async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_ke
         result = await email_client.send_email(
             to=tool_args["to"],
             subject=tool_args["subject"],
-            message=tool_args["message"]
+            message=tool_args["message"],
+            html=tool_args.get("html", False)  # Default to plain text if not specified
         )
         return {"success": True, "result": result}
 
@@ -512,6 +935,119 @@ async def execute_quendoo_tool(tool_name: str, tool_args: Dict[str, Any], api_ke
         return await list_hotel_documents(
             hotel_id=hotel_id,  # Use hotel ID from JWT token (secure)
             document_types=tool_args.get("documentTypes")
+        )
+
+    elif tool_name == "analyze_data":
+        # Use Claude via direct Anthropic API to analyze data with specific instructions
+        import os
+        from anthropic import Anthropic
+        from google.cloud import secretmanager
+
+        data = tool_args.get("data", "")
+        instruction = tool_args.get("instruction", "")
+        output_format = tool_args.get("format", "text")
+        language = tool_args.get("language", "bulgarian")
+
+        # Truncate data if too large (max 100k chars)
+        if len(data) > 100000:
+            data = data[:100000] + "\n\n[Data truncated - too large]"
+
+        # Build prompt based on format and language
+        # For html_table, we'll first generate markdown table then convert to HTML
+        actual_format = "table" if output_format == "html_table" else output_format
+
+        format_instructions = {
+            "text": "Return the result as clear, human-readable text summary.",
+            "json": "Return the result as valid JSON only, without any markdown formatting or explanation.",
+            "table": "Return the result as a markdown table.",
+            "list": "Return the result as a bulleted markdown list."
+        }
+
+        # Language instructions
+        language_instructions = {
+            "bulgarian": "IMPORTANT: Respond ONLY in Bulgarian language. Use Bulgarian characters (а, б, в, г, д, е, ж, з, и, й, к, л, м, н, о, п, р, с, т, у, ф, х, ц, ч, ш, щ, ъ, ь, ю, я).",
+            "english": "Respond in English language."
+        }
+
+        prompt = f"""You are a data analyst. Analyze the following data according to the instruction.
+
+DATA:
+{data}
+
+INSTRUCTION:
+{instruction}
+
+OUTPUT FORMAT:
+{format_instructions.get(actual_format, format_instructions["text"])}
+
+LANGUAGE:
+{language_instructions.get(language, language_instructions["bulgarian"])}
+
+Provide only the requested output without any additional explanation or preamble."""
+
+        try:
+            # Get Anthropic API key from Secret Manager
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+            secret_client = secretmanager.SecretManagerServiceClient()
+            secret_name = f"projects/{project_id}/secrets/anthropic-api-key/versions/latest"
+
+            response_secret = secret_client.access_secret_version(request={"name": secret_name})
+            api_key = response_secret.payload.data.decode("UTF-8")
+
+            # Use direct Anthropic API
+            client = Anthropic(api_key=api_key)
+
+            response = client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=4096,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+
+            result = response.content[0].text
+
+            # Convert markdown table to HTML if html_table format requested
+            if output_format == "html_table":
+                result = markdown_table_to_html(result)
+
+            return {
+                "success": True,
+                "analysis": result,
+                "format": output_format
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": f"Analysis failed: {str(e)}"
+            }
+
+    elif tool_name == "fetch_url":
+        web_fetch = get_web_fetch_service()
+        return await web_fetch.fetch_url(
+            url=tool_args["url"],
+            format=tool_args.get("format", "html"),
+            timeout=tool_args.get("timeout", 10),
+            api_key=api_key  # For rate limiting per hotel
+        )
+
+    elif tool_name == "query_excel_data":
+        # Import document service
+        from app.services.document_service import query_excel_structured
+
+        # Get hotelId from tool arguments (sent by backend from JWT token)
+        hotel_id = tool_args.get("hotelId")
+        if not hotel_id:
+            return {
+                "success": False,
+                "error": "hotelId parameter is required for Excel queries"
+            }
+
+        return await query_excel_structured(
+            hotel_id=hotel_id,  # Use hotel ID from JWT token (secure)
+            query=tool_args["query"],
+            file_name=tool_args.get("fileName"),
+            limit=tool_args.get("limit", 10)
         )
 
     else:
