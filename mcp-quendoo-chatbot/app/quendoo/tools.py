@@ -1399,8 +1399,12 @@ Provide only the requested output without any additional explanation or preamble
             }
 
     elif tool_name == "scrape_and_compare_hotels":
-        import httpx
+        import hashlib
+        import asyncio
         import os
+        from google.cloud import firestore
+        import httpx
+        from uuid import uuid4
 
         urls = tool_args.get("urls", [])
         check_in = tool_args.get("checkIn")
@@ -1432,66 +1436,95 @@ Provide only the requested output without any additional explanation or preamble
 
         print(f"[scrape_and_compare_hotels] Scraping {len(urls)} hotels in batch")
 
-        # Call backend batch endpoint
-        backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
-        batch_endpoint = f"{backend_url}/scraper/batch"
+        # Generate batch ID
+        batch_id = str(uuid4())
 
-        # Get hotel token from environment
-        hotel_token = os.getenv("HOTEL_TOKEN")
-        if not hotel_token:
-            return {
-                "success": False,
-                "error": "Hotel authentication token not configured"
-            }
+        # Generate cache keys for each hotel
+        def generate_cache_key(url, check_in, check_out, adults, children, rooms):
+            cache_string = f"{url}_{check_in or ''}_{check_out or ''}_{adults}_{children}_{rooms}"
+            return hashlib.md5(cache_string.encode()).hexdigest()
 
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    batch_endpoint,
-                    headers={
-                        "Authorization": f"Bearer {hotel_token}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "urls": urls,
-                        "checkIn": check_in,
-                        "checkOut": check_out,
-                        "adults": adults,
-                        "children": children,
-                        "rooms": rooms
-                    }
-                )
+        hotels = []
+        for url in urls:
+            cache_key = generate_cache_key(url, check_in, check_out, adults, children, rooms)
+            hotels.append({
+                "cacheKey": cache_key,
+                "url": url,
+                "status": "pending",
+                "hotelName": None,
+                "minPrice": None,
+                "maxPrice": None,
+                "currency": "USD",
+                "rating": None,
+                "roomCount": 0,
+                "error": None
+            })
 
-                if response.status_code != 200:
-                    return {
-                        "success": False,
-                        "error": f"Failed to start batch scraping: {response.text}"
-                    }
+        # Initialize Firestore and create batch document
+        db = firestore.Client()
+        batch_ref = db.collection('scraper_batches').document(batch_id)
+        batch_ref.set({
+            "batchId": batch_id,
+            "status": "in_progress",
+            "totalHotels": len(urls),
+            "completedHotels": 0,
+            "failedHotels": 0,
+            "progress": 0,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "checkIn": check_in,
+            "checkOut": check_out,
+            "adults": adults,
+            "children": children,
+            "rooms": rooms,
+            "hotels": hotels,
+            "results": None
+        })
 
-                data = response.json()
-                print(f"[scrape_and_compare_hotels] Batch started: {data.get('batchId')}")
+        print(f"[scrape_and_compare_hotels] Created batch document: {batch_id}")
 
-                return {
-                    "success": True,
-                    "batchId": data.get("batchId"),
-                    "totalHotels": data.get("totalHotels"),
-                    "message": data.get("message"),
-                    "estimatedTime": data.get("estimatedTime"),
-                    "realtimeEnabled": True
-                }
+        # Trigger Cloud Functions for each hotel (async, don't wait)
+        cloud_function_url = os.getenv("SCRAPER_CLOUD_FUNCTION_URL", "https://us-central1-quendoo-ai-dashboard.cloudfunctions.net/scrapeBooking")
 
-        except httpx.RequestError as e:
-            print(f"[scrape_and_compare_hotels] Request error: {e}")
-            return {
-                "success": False,
-                "error": f"Failed to connect to batch scraping service: {str(e)}"
-            }
-        except Exception as e:
-            print(f"[scrape_and_compare_hotels] Unexpected error: {e}")
-            return {
-                "success": False,
-                "error": f"Unexpected error: {str(e)}"
-            }
+        async def trigger_scraping():
+            """Background task to trigger all Cloud Functions"""
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    tasks = []
+                    for index, hotel in enumerate(hotels):
+                        task = client.post(
+                            cloud_function_url,
+                            json={
+                                "url": hotel["url"],
+                                "checkIn": check_in,
+                                "checkOut": check_out,
+                                "adults": adults,
+                                "children": children,
+                                "rooms": rooms,
+                                "cacheKey": hotel["cacheKey"],
+                                "batchId": batch_id,
+                                "batchIndex": index
+                            }
+                        )
+                        tasks.append(task)
+
+                    # Fire all requests in parallel
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            except Exception as e:
+                print(f"[scrape_and_compare_hotels] Background scraping error: {e}")
+
+        # Start background task without waiting
+        asyncio.create_task(trigger_scraping())
+
+        # Return immediately to AI
+        return {
+            "success": True,
+            "batchId": batch_id,
+            "totalHotels": len(urls),
+            "message": f"Scraping {len(urls)} hotels...",
+            "estimatedTime": "1-2 minutes",
+            "realtimeEnabled": True
+        }
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")
