@@ -185,6 +185,8 @@ CMD python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
 11. `send_quendoo_email` - Send email
 12. `search_hotel_documents` - Semantic search in uploaded hotel documents (RAG)
 13. `list_hotel_documents` - List all uploaded documents for the hotel
+14. `scrape_competitor_prices` - **NEW** Scrape competitor hotel prices from Booking.com with realtime progress
+15. `check_scrape_status` - Check scraping progress status
 
 **Document Processing (RAG System):**
 - Supports: PDF, DOCX, Excel (XLSX/XLS), Images (JPG/PNG)
@@ -382,6 +384,128 @@ gcloud logging read "resource.type=cloud_run_revision AND resource.labels.servic
 ```bash
 gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=mcp-quendoo-chatbot" --limit 50 --project quendoo-ai-dashboard
 ```
+
+---
+
+---
+
+## Booking.com Scraper System (NEW)
+
+### Architecture:
+```
+┌──────────────────┐
+│  Frontend (Vue)  │
+│  ScraperProgress │ <── Firestore onSnapshot (Realtime)
+└────────┬─────────┘
+         │
+         │ Displays progress bar with realtime updates
+         │
+┌────────▼──────────────────────────────┐
+│  Firebase Firestore                   │
+│  competitor_price_cache/{cacheKey}    │
+│    - status: 'in_progress'            │
+│    - progress: 0-100                  │
+│    - message: "Loading..."            │
+│    - result: {...}                    │
+└────────▲──────────────────────────────┘
+         │
+         │ Updates progress every few seconds
+         │
+┌────────┴──────────────────────────────┐
+│  Cloud Function: scrapeBooking        │
+│  - Puppeteer + @sparticuz/chromium    │
+│  - Scrapes Booking.com                │
+│  - Progress: 5% → 10% → 30% → ... → 100%│
+└───────────────────────────────────────┘
+```
+
+### Components:
+
+#### 1. **MCP Tool: scrape_competitor_prices**
+   - Location: `mcp-quendoo-chatbot/app/quendoo/tools.py`
+   - Triggers async scraping via Cloud Function
+   - Returns `cacheKey` for tracking progress
+   - Response format:
+     ```json
+     {
+       "success": true,
+       "status": "started",
+       "cacheKey": "scraper_xxx",
+       "realtimeEnabled": true
+     }
+     ```
+
+#### 2. **Cloud Function: scrapeBooking**
+   - Location: `functions/index.js`
+   - Tech: Node.js, Puppeteer, @sparticuz/chromium
+   - URL: `https://scrapebooking-4fa3yy3ovq-uc.a.run.app`
+   - Features:
+     - Headless browser scraping
+     - Multiple CSS selector fallbacks (8 for hotel name, 5-6 for other fields)
+     - Data validation
+     - Retry mechanism (2 retries with exponential backoff: 5s, 10s)
+     - Rate limiting (200 requests/day in Firestore)
+     - Proxy rotation (free proxies + paid proxy support)
+     - **Realtime progress updates** to Firestore (5%, 10%, 30%, 60%, 70%, 90%, 95%, 100%)
+
+#### 3. **Frontend: ScraperProgress.vue**
+   - Location: `frontend/src/components/chat/ScraperProgress.vue`
+   - Style: Dashboard with 3 stats cards
+   - Features:
+     - Firestore `onSnapshot` realtime listener
+     - Progress bar (striped, animated)
+     - Elapsed time counter
+     - Estimated time remaining
+     - Results table (rooms, prices, availability)
+     - Error handling
+
+#### 4. **Firebase Firestore**
+   - Collection: `competitor_price_cache`
+   - Document structure:
+     ```json
+     {
+       "status": "in_progress",
+       "progress": 70,
+       "message": "Extracting hotel data...",
+       "timestamp": 1736799240,
+       "url": "https://www.booking.com/hotel/...",
+       "checkIn": "2026-08-18",
+       "checkOut": "2026-08-22",
+       "result": { ... }
+     }
+     ```
+
+### Deployment:
+
+```bash
+# Deploy Cloud Function
+cd functions
+firebase deploy --only functions:scrapeBooking
+
+# Deploy MCP Server (includes scraper tools)
+cd mcp-quendoo-chatbot
+gcloud run deploy mcp-quendoo-chatbot --source . --region us-central1
+
+# Frontend (already includes ScraperProgress component)
+cd frontend
+npm run build
+firebase deploy --only hosting
+```
+
+### Usage Flow:
+
+1. User: "Check prices for Hotel X on Booking.com"
+2. AI calls `scrape_competitor_prices` tool
+3. MCP tool triggers Cloud Function, returns `cacheKey`
+4. Frontend displays `ScraperProgress` component
+5. ScraperProgress sets up Firestore listener
+6. Cloud Function scrapes and writes progress updates to Firestore
+7. Frontend receives realtime updates via Firestore
+8. After 30-40s, results are displayed
+
+### Documentation:
+
+See `SCRAPER-PROGRESS-IMPLEMENTATION.md` for detailed implementation guide.
 
 ---
 

@@ -1,0 +1,51 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default: Deny all access unless explicitly allowed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Allow authenticated users to read their own hotel data
+    match /hotels/{hotelId} {
+      allow read: if request.auth != null && request.auth.token.hotelId == hotelId;
+      allow write: if false; // Only backend can write
+    }
+
+    // Allow authenticated users to access their conversations
+    match /conversations/{conversationId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+
+      match /messages/{messageId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+    }
+
+    // Allow anyone to read competitor price cache (temporary scraping data)
+    // This is safe because:
+    // 1. Data is public hotel pricing from Booking.com
+    // 2. Cache keys are random UUIDs (hard to guess)
+    // 3. Data auto-expires after 1 hour
+    // 4. Only backend/cloud functions can write
+    match /competitor_price_cache/{cacheKey} {
+      allow read: if true;  // Allow all reads for realtime progress
+      allow write: if false; // Only backend/cloud functions can write
+    }
+
+    // Allow authenticated users to access documents
+    match /hotel_documents/{documentId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only backend can write
+    }
+
+    // Allow authenticated users to access tasks
+    match /tasks/{taskId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only backend/cloud functions can write
+    }
+  }
+}

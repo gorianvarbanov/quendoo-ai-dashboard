@@ -431,6 +431,107 @@ Examples:
             },
             "required": ["query"]
         }
+    },
+    {
+        "name": "scrape_competitor_prices",
+        "description": """Scrape competitor hotel prices from Booking.com using headless browser.
+
+⚠️ CRITICAL WORKFLOW:
+1. Call this tool → Returns immediately with cacheKey if no cache exists
+2. Tell user: "Checking competitor prices, this takes 30-40 seconds..."
+3. Wait 10 seconds, then call check_scrape_status(cacheKey)
+4. If status is "pending", keep checking every 5 seconds for up to 50 seconds total
+5. When status is "completed", show results to user
+6. IMPORTANT: Do NOT give up if still pending - scraping takes 30-40 seconds!
+
+Use this tool to:
+- Get real-time competitor prices from Booking.com
+- Monitor competitor availability
+- Compare room types and rates
+- Track competitor ratings and reviews
+
+The tool uses a Cloud Function with Puppeteer + headless Chrome to bypass anti-bot protection and extract:
+- Hotel name
+- Room types and names
+- Prices per room (including currency)
+- Availability status
+- Hotel rating and number of reviews
+- Bed configurations and occupancy
+
+REQUIRED: Valid Booking.com hotel URL (e.g., https://www.booking.com/hotel/bg/evrika.bg.html)
+Note: Results are cached for 1 hour to avoid excessive scraping.""",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Full Booking.com hotel URL. Example: 'https://www.booking.com/hotel/bg/evrika.bg.html'",
+                    "pattern": "^https?://.*booking\\.com/hotel/"
+                },
+                "checkIn": {
+                    "type": "string",
+                    "description": "Check-in date in YYYY-MM-DD format. Optional (uses URL parameters if not provided).",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "checkOut": {
+                    "type": "string",
+                    "description": "Check-out date in YYYY-MM-DD format. Optional (uses URL parameters if not provided).",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "adults": {
+                    "type": "integer",
+                    "description": "Number of adults. Default: 2",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 2
+                },
+                "children": {
+                    "type": "integer",
+                    "description": "Number of children. Default: 0",
+                    "minimum": 0,
+                    "maximum": 10,
+                    "default": 0
+                },
+                "rooms": {
+                    "type": "integer",
+                    "description": "Number of rooms. Default: 1",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "default": 1
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "check_scrape_status",
+        "description": """Check status of competitor price scraping task.
+
+⚠️ IMPORTANT: Scraping takes 30-40 seconds. If you get "pending" status, you MUST keep checking!
+
+Returns:
+- status='completed': Returns the scraped hotel data with prices → Show results to user
+- status='pending': Still scraping → Wait 5 seconds and check again (don't give up!)
+- status='error': Scraping failed → Show error to user
+
+WORKFLOW after calling scrape_competitor_prices:
+1. Wait 10 seconds
+2. Call check_scrape_status(cacheKey)
+3. If pending: Wait 5 seconds, call again (repeat up to 10 times / 50 seconds total)
+4. If completed: Show results
+5. If error: Show error
+
+CRITICAL: Do NOT stop checking after 1-2 attempts! Scraping needs 30-40 seconds to complete.""",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "cacheKey": {
+                    "type": "string",
+                    "description": "Cache key returned from scrape_competitor_prices when scraping is started"
+                }
+            },
+            "required": ["cacheKey"]
+        }
     }
 ]
 
@@ -1049,6 +1150,186 @@ Provide only the requested output without any additional explanation or preamble
             file_name=tool_args.get("fileName"),
             limit=tool_args.get("limit", 10)
         )
+
+    elif tool_name == "scrape_competitor_prices":
+        import time
+        import hashlib
+        import asyncio
+        import os
+        from google.cloud import firestore
+
+        # Generate cache key from parameters
+        url = tool_args["url"]
+        check_in = tool_args.get("checkIn", "")
+        check_out = tool_args.get("checkOut", "")
+        adults = tool_args.get("adults", 2)
+        children = tool_args.get("children", 0)
+        rooms = tool_args.get("rooms", 1)
+
+        # Create a hash-based cache key for clean Firestore doc IDs
+        cache_string = f"{url}_{check_in}_{check_out}_{adults}_{children}_{rooms}"
+        cache_key = hashlib.md5(cache_string.encode()).hexdigest()
+
+        # Initialize Firestore
+        db = firestore.Client()
+
+        # ✅ CHECK RATE LIMIT before proceeding
+        from datetime import datetime
+        rate_limit_key = f"rate_limit_{datetime.now().strftime('%Y-%m-%d')}"  # Daily limit
+        rate_limit_ref = db.collection('scraper_rate_limits').document(rate_limit_key)
+        rate_limit_doc = rate_limit_ref.get()
+
+        current_count = rate_limit_doc.to_dict().get('count', 0) if rate_limit_doc.exists else 0
+        MAX_REQUESTS_PER_DAY = 200  # Daily limit to prevent abuse
+
+        if current_count >= MAX_REQUESTS_PER_DAY:
+            return {
+                "success": False,
+                "error": f"Daily scraping limit reached ({MAX_REQUESTS_PER_DAY} requests per day). Please try again tomorrow or contact support.",
+                "limitReached": True
+            }
+
+        cache_ref = db.collection('competitor_price_cache').document(cache_key)
+
+        # Check if cache exists and is valid
+        cache_doc = cache_ref.get()
+
+        if cache_doc.exists:
+            cache_data = cache_doc.to_dict()
+            cache_timestamp = cache_data.get('timestamp', 0)
+            cache_age_hours = (time.time() - cache_timestamp) / 3600
+
+            # If cache is less than 6 hours old and completed
+            if cache_age_hours < 6 and cache_data.get('status') == 'completed':
+                return {
+                    "success": True,
+                    "data": cache_data.get('result'),
+                    "cached": True,
+                    "cachedAt": cache_timestamp,
+                    "cacheAgeHours": round(cache_age_hours, 1)
+                }
+
+        # No valid cache - increment rate limit counter and start async scraping
+        rate_limit_ref.set({
+            'count': current_count + 1,
+            'lastRequest': time.time(),
+            'date': datetime.now().strftime('%Y-%m-%d')
+        }, merge=True)
+        # First, mark as pending in Firestore
+        cache_ref.set({
+            'status': 'pending',
+            'timestamp': time.time(),
+            'url': url,
+            'checkIn': check_in,
+            'checkOut': check_out,
+            'adults': adults,
+            'children': children,
+            'rooms': rooms
+        })
+
+        # Trigger Cloud Function async (don't wait for it)
+        cloud_function_url = os.getenv(
+            "SCRAPER_CLOUD_FUNCTION_URL",
+            "https://us-central1-quendoo-ai-dashboard.cloudfunctions.net/scrapeBooking"
+        )
+
+        payload = {
+            "url": url,
+            "checkIn": check_in,
+            "checkOut": check_out,
+            "adults": adults,
+            "children": children,
+            "rooms": rooms,
+            "cacheKey": cache_key  # Pass cache key to Cloud Function
+        }
+
+        # Trigger Cloud Function in background
+        async def trigger_scraping():
+            """Background task to trigger Cloud Function"""
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    await client.post(cloud_function_url, json=payload)
+            except Exception as e:
+                # Log error but don't fail
+                print(f"[scrape_competitor_prices] Background scraping error: {e}")
+
+        # Start background task without waiting
+        asyncio.create_task(trigger_scraping())
+
+        # Return immediately to AI
+        response = {
+            "success": True,
+            "status": "started",
+            "cacheKey": cache_key,
+            "message": "Scraping started. This takes approximately 30-40 seconds. Use check_scrape_status to retrieve results.",
+            "estimatedWaitSeconds": 35,
+            "realtimeEnabled": True
+        }
+        print(f"[scrape_competitor_prices] Returning response with cacheKey: {cache_key}")
+        print(f"[scrape_competitor_prices] Response: {response}")
+        return response
+
+    elif tool_name == "check_scrape_status":
+        from google.cloud import firestore
+        import time
+
+        cache_key = tool_args.get("cacheKey")
+        if not cache_key:
+            return {
+                "success": False,
+                "error": "cacheKey parameter is required"
+            }
+
+        # Get status from Firestore
+        db = firestore.Client()
+        cache_ref = db.collection('competitor_price_cache').document(cache_key)
+        cache_doc = cache_ref.get()
+
+        if not cache_doc.exists:
+            return {
+                "success": False,
+                "error": "Scraping task not found. Cache key may be invalid."
+            }
+
+        cache_data = cache_doc.to_dict()
+        status = cache_data.get('status', 'unknown')
+
+        if status == 'pending' or status == 'in_progress':
+            # Calculate how long it's been running
+            start_time = cache_data.get('timestamp', 0)
+            elapsed_seconds = int(time.time() - start_time)
+            progress = cache_data.get('progress', 0)
+            progress_message = cache_data.get('message', 'Scraping in progress...')
+
+            return {
+                "success": True,
+                "status": "in_progress" if status == 'in_progress' else "pending",
+                "message": f"{progress_message} ({elapsed_seconds} seconds elapsed)",
+                "elapsedSeconds": elapsed_seconds,
+                "progress": progress,
+                "progressMessage": progress_message
+            }
+
+        elif status == 'completed':
+            return {
+                "success": True,
+                "status": "completed",
+                "data": cache_data.get('result'),
+                "scrapedAt": cache_data.get('timestamp')
+            }
+
+        elif status == 'error':
+            return {
+                "success": False,
+                "status": "error",
+                "error": cache_data.get('error', 'Unknown error occurred during scraping')
+            }
+
+        else:
+            return {
+                "success": False,
+                "error": f"Unknown status: {status}"
+            }
 
     else:
         raise ValueError(f"Unknown tool: {tool_name}")

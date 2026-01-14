@@ -1062,6 +1062,43 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
   }
 });
 
+// Scraper status endpoint (for fallback when Firestore is blocked)
+app.get('/scraper/status/:cacheKey', requireHotelAuth, async (req, res) => {
+  try {
+    const { cacheKey } = req.params;
+
+    if (!cacheKey) {
+      return res.status(400).json({ error: 'cacheKey is required' });
+    }
+
+    // Get status from Firestore
+    const { db } = await import('./db/firestore.js');
+    const cacheRef = db.collection('competitor_price_cache').doc(cacheKey);
+    const cacheDoc = await cacheRef.get();
+
+    if (!cacheDoc.exists) {
+      return res.status(404).json({
+        error: 'Cache not found',
+        status: 'not_found'
+      });
+    }
+
+    const data = cacheDoc.data();
+
+    res.json({
+      status: data.status || 'unknown',
+      progress: data.progress || 0,
+      message: data.message || '',
+      result: data.result || null,
+      error: data.error || null
+    });
+
+  } catch (error) {
+    console.error('[Scraper Status] Error:', error);
+    res.status(500).json({ error: 'Failed to get scraper status' });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('Server error:', err);

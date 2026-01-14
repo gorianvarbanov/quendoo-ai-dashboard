@@ -83,8 +83,8 @@
         </div>
       </div>
 
-      <!-- Tools Used Timeline (shown for AI messages that used tools) -->
-      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming" class="tools-timeline-compact">
+      <!-- Tools Used Timeline (shown for AI messages that used tools, hidden when scraper is active) -->
+      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming && !scraperCacheKey" class="tools-timeline-compact">
         <!-- Accordion Header -->
         <div class="timeline-accordion-header" @click="toggleToolsAccordion">
           <v-icon
@@ -229,6 +229,13 @@
         </v-btn>
       </div>
 
+      <!-- Scraper Progress Component (shown when scrape_competitor_prices tool used) -->
+      <ScraperProgress
+        v-if="scraperCacheKey && !isUser"
+        :cache-key="scraperCacheKey"
+        class="scraper-progress-container"
+      />
+
       <div v-if="!isUser && !isStreaming && !isTyping" class="message-actions">
         <v-btn icon variant="text" size="x-small" title="Copy message" @click="copyMessage">
           <v-icon size="14">mdi-content-copy</v-icon>
@@ -286,6 +293,7 @@ import TableViewer from '@/components/common/TableViewer.vue'
 import RoomGallery from '@/components/chat/RoomGallery.vue'
 import AvailabilityPanel from '@/components/chat/AvailabilityPanel.vue'
 import VisualizationDrawer from '@/components/chat/VisualizationDrawer.vue'
+import ScraperProgress from '@/components/chat/ScraperProgress.vue'
 
 // Configure marked for better rendering
 marked.setOptions({
@@ -686,6 +694,106 @@ const excelHeaders = computed(() => {
   }
 
   return []
+})
+
+// Detect if scrape_competitor_prices tool was used and extract cacheKey
+const scraperCacheKey = computed(() => {
+  console.log('[ChatMessage] ===== SCRAPER CACHE KEY CHECK =====')
+  console.log('[ChatMessage] toolsUsed count:', toolsUsed.value?.length || 0)
+
+  if (!toolsUsed.value || toolsUsed.value.length === 0) {
+    console.log('[ChatMessage] No tools used')
+    return null
+  }
+
+  // Debug: Print ALL tools to see what's available
+  console.log('[ChatMessage] ALL TOOLS:')
+  toolsUsed.value.forEach((tool, idx) => {
+    console.log(`[ChatMessage]   Tool ${idx + 1}: ${tool.name}`)
+    // Try to extract and show result properties for check_scrape_status
+    if (tool.name === 'check_scrape_status' && tool.result) {
+      try {
+        // Convert Proxy to plain object
+        const plainResult = JSON.parse(JSON.stringify(tool.result))
+        console.log(`[ChatMessage]   Tool ${idx + 1} result:`, plainResult)
+        if (plainResult.cacheKey) {
+          console.log(`[ChatMessage]   ⭐ Found cacheKey in check_scrape_status:`, plainResult.cacheKey)
+        }
+      } catch (e) {
+        console.log(`[ChatMessage]   Tool ${idx + 1} result (raw):`, tool.result)
+      }
+    }
+  })
+
+  const scraperTool = toolsUsed.value.find(tool => tool.name === 'scrape_competitor_prices')
+  if (!scraperTool) {
+    console.log('[ChatMessage] ❌ scrape_competitor_prices tool NOT FOUND')
+
+    // FALLBACK: Check if we have check_scrape_status with cacheKey
+    const checkStatusTool = toolsUsed.value.find(tool => tool.name === 'check_scrape_status')
+    if (checkStatusTool) {
+      console.log('[ChatMessage] ⚠️ Found check_scrape_status instead, trying to extract cacheKey from it')
+      try {
+        const plainResult = JSON.parse(JSON.stringify(checkStatusTool.result))
+        console.log('[ChatMessage] check_scrape_status result:', plainResult)
+        if (plainResult?.cacheKey) {
+          console.log('[ChatMessage] ✅ Using cacheKey from check_scrape_status:', plainResult.cacheKey)
+          return plainResult.cacheKey
+        }
+      } catch (e) {
+        console.log('[ChatMessage] Failed to parse check_scrape_status result:', e)
+      }
+    }
+
+    return null
+  }
+
+  console.log('[ChatMessage] scrape_competitor_prices tool found:', JSON.stringify(scraperTool, null, 2))
+
+  // Debug: Print all tool properties
+  console.log('[ChatMessage] Tool object keys:', Object.keys(scraperTool).join(', '))
+  console.log('[ChatMessage] Tool.result:', scraperTool.result)
+  if (scraperTool.result) {
+    console.log('[ChatMessage] Tool.result keys:', Object.keys(scraperTool.result).join(', '))
+  }
+
+  // Check for cacheKey in multiple possible locations
+  let cacheKey = null
+
+  // Direct in result
+  if (scraperTool.result?.cacheKey) {
+    cacheKey = scraperTool.result.cacheKey
+    console.log('[ChatMessage] ✅ Found cacheKey in result.cacheKey:', cacheKey)
+  }
+
+  // In result.result (nested MCP format)
+  if (!cacheKey && scraperTool.result?.result?.cacheKey) {
+    cacheKey = scraperTool.result.result.cacheKey
+    console.log('[ChatMessage] ✅ Found cacheKey in result.result.cacheKey:', cacheKey)
+  }
+
+  // Unwrapped MCP format
+  if (!cacheKey) {
+    const unwrapped = unwrapMCPResult(scraperTool.result)
+    console.log('[ChatMessage] Unwrapped result:', unwrapped)
+    if (unwrapped) {
+      console.log('[ChatMessage] Unwrapped keys:', Object.keys(unwrapped).join(', '))
+    }
+    cacheKey = unwrapped?.cacheKey
+    if (cacheKey) {
+      console.log('[ChatMessage] ✅ Found cacheKey in unwrapped result:', cacheKey)
+    }
+  }
+
+  // Direct in tool (not in result)
+  if (!cacheKey && scraperTool.cacheKey) {
+    cacheKey = scraperTool.cacheKey
+    console.log('[ChatMessage] ✅ Found cacheKey directly in tool:', cacheKey)
+  }
+
+  console.log('[ChatMessage] ===== FINAL CACHE KEY:', cacheKey, '=====')
+
+  return cacheKey
 })
 
 // Room gallery state
@@ -2522,6 +2630,12 @@ const formattedContent = computed(() => {
 
 /* View Details Button Styles */
 .view-details-button {
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+
+/* Scraper Progress Container */
+.scraper-progress-container {
   margin-top: 12px;
   margin-bottom: 8px;
 }

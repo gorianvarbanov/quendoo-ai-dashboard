@@ -826,6 +826,13 @@ export class QuendooClaudeIntegration {
 
                 const duration = Date.now() - startTime;
 
+                // DEBUG: Log MCP response for scraper tool
+                if (block.name === 'scrape_competitor_prices') {
+                  console.log('[Quendoo] scrape_competitor_prices MCP response:', JSON.stringify(result, null, 2));
+                  console.log('[Quendoo] result.result:', result.result);
+                  console.log('[Quendoo] result keys:', Object.keys(result));
+                }
+
                 if (result.error) {
                   throw new Error(result.error.message);
                 }
