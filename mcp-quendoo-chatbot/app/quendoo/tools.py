@@ -1402,6 +1402,8 @@ Provide only the requested output without any additional explanation or preamble
         import hashlib
         import asyncio
         import os
+        import time
+        from datetime import datetime
         from google.cloud import firestore
         import httpx
         from uuid import uuid4
@@ -1436,18 +1438,51 @@ Provide only the requested output without any additional explanation or preamble
 
         print(f"[scrape_and_compare_hotels] Scraping {len(urls)} hotels in batch")
 
+        # Initialize Firestore
+        db = firestore.Client()
+
+        # ✅ CHECK RATE LIMIT before proceeding (same as single scraper)
+        rate_limit_key = f"rate_limit_{datetime.now().strftime('%Y-%m-%d')}"
+        rate_limit_ref = db.collection('scraper_rate_limits').document(rate_limit_key)
+        rate_limit_doc = rate_limit_ref.get()
+
+        current_count = rate_limit_doc.to_dict().get('count', 0) if rate_limit_doc.exists else 0
+        MAX_REQUESTS_PER_DAY = 200
+
+        # Batch scraping counts as N requests (one per hotel)
+        if current_count + len(urls) > MAX_REQUESTS_PER_DAY:
+            return {
+                "success": False,
+                "error": f"Batch scraping would exceed daily limit ({MAX_REQUESTS_PER_DAY} requests per day). You can scrape {MAX_REQUESTS_PER_DAY - current_count} more hotels today.",
+                "limitReached": True
+            }
+
+        # Increment rate limit counter by number of hotels
+        rate_limit_ref.set({
+            'count': current_count + len(urls),
+            'lastRequest': time.time(),
+            'date': datetime.now().strftime('%Y-%m-%d')
+        }, merge=True)
+
         # Generate batch ID
         batch_id = str(uuid4())
 
-        # Generate cache keys for each hotel
+        # Generate cache keys for each hotel and check for existing cache
         def generate_cache_key(url, check_in, check_out, adults, children, rooms):
             cache_string = f"{url}_{check_in or ''}_{check_out or ''}_{adults}_{children}_{rooms}"
             return hashlib.md5(cache_string.encode()).hexdigest()
 
         hotels = []
+        urls_to_scrape = []
+
         for url in urls:
             cache_key = generate_cache_key(url, check_in, check_out, adults, children, rooms)
-            hotels.append({
+
+            # Check if this hotel has valid cache (6 hours, same as single scraper)
+            cache_ref = db.collection('competitor_price_cache').document(cache_key)
+            cache_doc = cache_ref.get()
+
+            hotel_entry = {
                 "cacheKey": cache_key,
                 "url": url,
                 "status": "pending",
@@ -1458,10 +1493,47 @@ Provide only the requested output without any additional explanation or preamble
                 "rating": None,
                 "roomCount": 0,
                 "error": None
-            })
+            }
 
-        # Initialize Firestore and create batch document
-        db = firestore.Client()
+            if cache_doc.exists:
+                cache_data = cache_doc.to_dict()
+                cache_timestamp = cache_data.get('timestamp', 0)
+                cache_age_hours = (time.time() - cache_timestamp) / 3600
+
+                # If cache is less than 6 hours old and completed, use it
+                if cache_age_hours < 6 and cache_data.get('status') == 'completed':
+                    result = cache_data.get('result', {})
+                    hotel_entry.update({
+                        "status": "completed",
+                        "hotelName": result.get('hotelName'),
+                        "minPrice": min(result.get('prices', [0])) if result.get('prices') else None,
+                        "maxPrice": max(result.get('prices', [0])) if result.get('prices') else None,
+                        "currency": result.get('rooms', [{}])[0].get('currency', 'USD') if result.get('rooms') else 'USD',
+                        "rating": result.get('rating'),
+                        "roomCount": len(result.get('rooms', []))
+                    })
+                    print(f"[scrape_and_compare_hotels] Using cached data for {url} (age: {cache_age_hours:.1f}h)")
+                else:
+                    # Need to scrape this one
+                    urls_to_scrape.append((url, cache_key))
+            else:
+                # No cache, need to scrape
+                urls_to_scrape.append((url, cache_key))
+                # Mark as pending in cache
+                cache_ref.set({
+                    'status': 'pending',
+                    'timestamp': time.time(),
+                    'url': url,
+                    'checkIn': check_in,
+                    'checkOut': check_out,
+                    'adults': adults,
+                    'children': children,
+                    'rooms': rooms
+                })
+
+            hotels.append(hotel_entry)
+
+        # Create batch document (use time.time() for consistency with single scraper)
         batch_ref = db.collection('scraper_batches').document(batch_id)
         batch_ref.set({
             "batchId": batch_id,
@@ -1470,8 +1542,7 @@ Provide only the requested output without any additional explanation or preamble
             "completedHotels": 0,
             "failedHotels": 0,
             "progress": 0,
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "updatedAt": firestore.SERVER_TIMESTAMP,
+            "timestamp": time.time(),
             "checkIn": check_in,
             "checkOut": check_out,
             "adults": adults,
@@ -1482,39 +1553,46 @@ Provide only the requested output without any additional explanation or preamble
         })
 
         print(f"[scrape_and_compare_hotels] Created batch document: {batch_id}")
+        print(f"[scrape_and_compare_hotels] Need to scrape {len(urls_to_scrape)} hotels (others are cached)")
 
-        # Trigger Cloud Functions for each hotel (async, don't wait)
-        cloud_function_url = os.getenv("SCRAPER_CLOUD_FUNCTION_URL", "https://us-central1-quendoo-ai-dashboard.cloudfunctions.net/scrapeBooking")
+        # Trigger Cloud Functions only for hotels that need scraping
+        if urls_to_scrape:
+            cloud_function_url = os.getenv("SCRAPER_CLOUD_FUNCTION_URL", "https://us-central1-quendoo-ai-dashboard.cloudfunctions.net/scrapeBooking")
 
-        async def trigger_scraping():
-            """Background task to trigger all Cloud Functions"""
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    tasks = []
-                    for index, hotel in enumerate(hotels):
-                        task = client.post(
-                            cloud_function_url,
-                            json={
-                                "url": hotel["url"],
-                                "checkIn": check_in,
-                                "checkOut": check_out,
-                                "adults": adults,
-                                "children": children,
-                                "rooms": rooms,
-                                "cacheKey": hotel["cacheKey"],
-                                "batchId": batch_id,
-                                "batchIndex": index
-                            }
-                        )
-                        tasks.append(task)
+            async def trigger_scraping():
+                """Background task to trigger Cloud Functions for uncached hotels"""
+                try:
+                    async with httpx.AsyncClient(timeout=120.0) as client:
+                        tasks = []
+                        for url, cache_key in urls_to_scrape:
+                            # Find hotel index in full hotels list
+                            hotel_index = next(i for i, h in enumerate(hotels) if h["cacheKey"] == cache_key)
 
-                    # Fire all requests in parallel
-                    await asyncio.gather(*tasks, return_exceptions=True)
-            except Exception as e:
-                print(f"[scrape_and_compare_hotels] Background scraping error: {e}")
+                            task = client.post(
+                                cloud_function_url,
+                                json={
+                                    "url": url,
+                                    "checkIn": check_in,
+                                    "checkOut": check_out,
+                                    "adults": adults,
+                                    "children": children,
+                                    "rooms": rooms,
+                                    "cacheKey": cache_key,
+                                    "batchId": batch_id,
+                                    "batchIndex": hotel_index
+                                }
+                            )
+                            tasks.append(task)
 
-        # Start background task without waiting
-        asyncio.create_task(trigger_scraping())
+                        # Fire all requests in parallel
+                        await asyncio.gather(*tasks, return_exceptions=True)
+                except Exception as e:
+                    print(f"[scrape_and_compare_hotels] Background scraping error: {e}")
+
+            # Start background task without waiting
+            asyncio.create_task(trigger_scraping())
+        else:
+            print(f"[scrape_and_compare_hotels] All hotels are cached, no scraping needed")
 
         # Return immediately to AI
         return {
