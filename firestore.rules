@@ -36,6 +36,16 @@ service cloud.firestore {
       allow write: if false; // Only backend/cloud functions can write
     }
 
+    // Allow anyone to read batch scraper data (temporary comparison data)
+    // Same security model as competitor_price_cache:
+    // 1. Public pricing data aggregated from Booking.com
+    // 2. Batch IDs are random UUIDs (hard to guess)
+    // 3. Only backend/cloud functions can write
+    match /scraper_batches/{batchId} {
+      allow read: if true;  // Allow all reads for realtime progress
+      allow write: if false; // Only backend/cloud functions can write
+    }
+
     // Allow authenticated users to access documents
     match /hotel_documents/{documentId} {
       allow read: if request.auth != null;

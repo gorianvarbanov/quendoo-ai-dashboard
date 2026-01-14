@@ -9,6 +9,8 @@ dotenv.config();
 
 import express from 'express';
 import cors from 'cors';
+import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { MCPClientManager } from './mcpClientManager.js';
 import { ClaudeIntegration } from './claudeIntegration.js';
 import { QuendooClaudeIntegration } from './quendooClaudeIntegration.js';
@@ -1096,6 +1098,123 @@ app.get('/scraper/status/:cacheKey', requireHotelAuth, async (req, res) => {
   } catch (error) {
     console.error('[Scraper Status] Error:', error);
     res.status(500).json({ error: 'Failed to get scraper status' });
+  }
+});
+
+// Batch scraper endpoint - scrape multiple hotels and compare
+app.post('/scraper/batch', requireHotelAuth, async (req, res) => {
+  try {
+    const { urls, checkIn, checkOut, adults, children, rooms } = req.body;
+
+    console.log('[Batch Scraper] Received batch request:', { urlCount: urls?.length, checkIn, checkOut });
+
+    // Validation
+    if (!urls || !Array.isArray(urls)) {
+      return res.status(400).json({ error: 'urls must be an array' });
+    }
+
+    if (urls.length < 2 || urls.length > 5) {
+      return res.status(400).json({ error: 'Provide 2-5 hotel URLs' });
+    }
+
+    // Validate URLs
+    for (const url of urls) {
+      if (!url || typeof url !== 'string' || !url.includes('booking.com')) {
+        return res.status(400).json({ error: 'All URLs must be valid Booking.com hotel URLs' });
+      }
+    }
+
+    // Generate batch ID
+    const batchId = uuidv4();
+    console.log('[Batch Scraper] Generated batch ID:', batchId);
+
+    // Helper function to generate cache key (same logic as MCP tool)
+    const generateCacheKey = (url, checkIn, checkOut, adults, children, rooms) => {
+      const cacheString = `${url}_${checkIn || ''}_${checkOut || ''}_${adults || 2}_${children || 0}_${rooms || 1}`;
+      return crypto.createHash('md5').update(cacheString).digest('hex');
+    };
+
+    // Create hotel entries
+    const hotels = urls.map(url => ({
+      cacheKey: generateCacheKey(url, checkIn, checkOut, adults, children, rooms),
+      url: url,
+      status: 'pending',
+      hotelName: null,
+      minPrice: null,
+      maxPrice: null,
+      currency: 'USD',
+      rating: null,
+      roomCount: 0,
+      error: null
+    }));
+
+    // Get Firestore instance
+    const { db } = await import('./db/firestore.js');
+
+    // Create batch document in Firestore
+    const batchRef = db.collection('scraper_batches').doc(batchId);
+    await batchRef.set({
+      batchId: batchId,
+      status: 'in_progress',
+      totalHotels: urls.length,
+      completedHotels: 0,
+      failedHotels: 0,
+      progress: 0,
+      createdAt: Math.floor(Date.now() / 1000),
+      updatedAt: Math.floor(Date.now() / 1000),
+      checkIn: checkIn || null,
+      checkOut: checkOut || null,
+      adults: adults || 2,
+      children: children || 0,
+      rooms: rooms || 1,
+      hotels: hotels,
+      results: null
+    });
+
+    console.log('[Batch Scraper] Created batch document in Firestore');
+
+    // Trigger individual scrapes via Cloud Function (don't wait for responses)
+    const cloudFunctionUrl = process.env.SCRAPER_CLOUD_FUNCTION_URL ||
+                             'https://us-central1-quendoo-ai-dashboard.cloudfunctions.net/scrapeBooking';
+
+    console.log('[Batch Scraper] Triggering', urls.length, 'scrapes via Cloud Function');
+
+    urls.forEach(async (url, index) => {
+      try {
+        // Fire and forget - don't await the response
+        fetch(cloudFunctionUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: url,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            adults: adults || 2,
+            children: children || 0,
+            rooms: rooms || 1,
+            batchId: batchId,
+            batchIndex: index
+          })
+        }).catch(err => {
+          console.error(`[Batch Scraper] Failed to trigger scrape for hotel ${index}:`, err);
+        });
+      } catch (error) {
+        console.error(`[Batch Scraper] Error triggering scrape ${index}:`, error);
+      }
+    });
+
+    // Return batch info immediately
+    res.json({
+      success: true,
+      batchId: batchId,
+      totalHotels: urls.length,
+      message: `Scraping ${urls.length} hotels...`,
+      estimatedTime: '1-2 minutes'
+    });
+
+  } catch (error) {
+    console.error('[Batch Scraper] Error:', error);
+    res.status(500).json({ error: 'Failed to start batch scraping' });
   }
 });
 

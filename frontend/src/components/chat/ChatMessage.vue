@@ -84,7 +84,7 @@
       </div>
 
       <!-- Tools Used Timeline (shown for AI messages that used tools, hidden when scraper is active) -->
-      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming && !scraperCacheKey" class="tools-timeline-compact">
+      <div v-if="!isUser && toolsUsed && toolsUsed.length > 0 && !isStreaming && !scraperCacheKey && !batchScraperBatchId" class="tools-timeline-compact">
         <!-- Accordion Header -->
         <div class="timeline-accordion-header" @click="toggleToolsAccordion">
           <v-icon
@@ -236,6 +236,13 @@
         class="scraper-progress-container"
       />
 
+      <!-- Batch Scraper Progress Component (shown when scrape_and_compare_hotels tool used) -->
+      <BatchScraperProgress
+        v-if="batchScraperBatchId && !isUser"
+        :batch-id="batchScraperBatchId"
+        class="batch-scraper-progress-container"
+      />
+
       <div v-if="!isUser && !isStreaming && !isTyping" class="message-actions">
         <v-btn icon variant="text" size="x-small" title="Copy message" @click="copyMessage">
           <v-icon size="14">mdi-content-copy</v-icon>
@@ -294,6 +301,7 @@ import RoomGallery from '@/components/chat/RoomGallery.vue'
 import AvailabilityPanel from '@/components/chat/AvailabilityPanel.vue'
 import VisualizationDrawer from '@/components/chat/VisualizationDrawer.vue'
 import ScraperProgress from '@/components/chat/ScraperProgress.vue'
+import BatchScraperProgress from '@/components/chat/BatchScraperProgress.vue'
 
 // Configure marked for better rendering
 marked.setOptions({
@@ -794,6 +802,60 @@ const scraperCacheKey = computed(() => {
   console.log('[ChatMessage] ===== FINAL CACHE KEY:', cacheKey, '=====')
 
   return cacheKey
+})
+
+// Detect if scrape_and_compare_hotels tool was used and extract batchId
+const batchScraperBatchId = computed(() => {
+  console.log('[ChatMessage] ===== BATCH SCRAPER BATCH ID CHECK =====')
+  console.log('[ChatMessage] toolsUsed count:', toolsUsed.value?.length || 0)
+
+  if (!toolsUsed.value || toolsUsed.value.length === 0) {
+    console.log('[ChatMessage] No tools used')
+    return null
+  }
+
+  // Find the scrape_and_compare_hotels tool
+  const batchScraperTool = toolsUsed.value.find(tool => tool.name === 'scrape_and_compare_hotels')
+
+  if (!batchScraperTool) {
+    console.log('[ChatMessage] No scrape_and_compare_hotels tool found')
+    return null
+  }
+
+  console.log('[ChatMessage] Found scrape_and_compare_hotels tool:', batchScraperTool)
+
+  let batchId = null
+
+  // Check result.batchId (MCP standard format)
+  if (batchScraperTool.result?.batchId) {
+    batchId = batchScraperTool.result.batchId
+    console.log('[ChatMessage] ✅ Found batchId in result:', batchId)
+  }
+
+  // Check result.result.batchId (nested format)
+  if (!batchId && batchScraperTool.result?.result?.batchId) {
+    batchId = batchScraperTool.result.result.batchId
+    console.log('[ChatMessage] ✅ Found batchId in result.result:', batchId)
+  }
+
+  // Try unwrapping MCP format
+  if (!batchId && batchScraperTool.result) {
+    const unwrapped = unwrapMCPResult(batchScraperTool.result)
+    batchId = unwrapped?.batchId
+    if (batchId) {
+      console.log('[ChatMessage] ✅ Found batchId in unwrapped result:', batchId)
+    }
+  }
+
+  // Direct in tool (not in result)
+  if (!batchId && batchScraperTool.batchId) {
+    batchId = batchScraperTool.batchId
+    console.log('[ChatMessage] ✅ Found batchId directly in tool:', batchId)
+  }
+
+  console.log('[ChatMessage] ===== FINAL BATCH ID:', batchId, '=====')
+
+  return batchId
 })
 
 // Room gallery state

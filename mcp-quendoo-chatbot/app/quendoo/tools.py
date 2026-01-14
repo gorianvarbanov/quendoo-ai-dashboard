@@ -532,6 +532,73 @@ CRITICAL: Do NOT stop checking after 1-2 attempts! Scraping needs 30-40 seconds 
             },
             "required": ["cacheKey"]
         }
+    },
+    {
+        "name": "scrape_and_compare_hotels",
+        "description": """Scrape multiple hotels simultaneously (2-5 hotels) and compare their prices.
+
+Perfect for comparing competitor prices across multiple properties in one go!
+
+⚠️ WORKFLOW:
+1. Call this tool with 2-5 Booking.com URLs → Returns batchId immediately
+2. Tell user: "Scraping N hotels for comparison, this takes 1-2 minutes..."
+3. Frontend will show real-time progress automatically via Firestore
+4. Results appear in comparison table when all hotels complete
+
+IMPORTANT:
+- All hotels scrape in PARALLEL (much faster than sequential)
+- You don't need to poll status - frontend handles it
+- Just return the batchId and let the UI take over
+
+USE CASES:
+- "Compare prices for Hotel A, Hotel B, and Hotel C"
+- "Which is cheaper: Hotel X or Hotel Y?"
+- "Show me pricing for these 3 hotels: [urls]"
+""",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "urls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of 2-5 Booking.com hotel URLs to scrape and compare",
+                    "minItems": 2,
+                    "maxItems": 5
+                },
+                "checkIn": {
+                    "type": "string",
+                    "description": "Check-in date in YYYY-MM-DD format. If not provided, extracts from URL or uses defaults."
+                },
+                "checkOut": {
+                    "type": "string",
+                    "description": "Check-out date in YYYY-MM-DD format. If not provided, extracts from URL or uses defaults."
+                },
+                "adults": {
+                    "type": "integer",
+                    "description": "Number of adults (1-10). Default: 2",
+                    "minimum": 1,
+                    "maximum": 10,
+                    "default": 2
+                },
+                "children": {
+                    "type": "integer",
+                    "description": "Number of children (0-10). Default: 0",
+                    "minimum": 0,
+                    "maximum": 10,
+                    "default": 0
+                },
+                "rooms": {
+                    "type": "integer",
+                    "description": "Number of rooms (1-5). Default: 1",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "default": 1
+                }
+            },
+            "required": ["urls"]
+        }
     }
 ]
 
@@ -1329,6 +1396,101 @@ Provide only the requested output without any additional explanation or preamble
             return {
                 "success": False,
                 "error": f"Unknown status: {status}"
+            }
+
+    elif tool_name == "scrape_and_compare_hotels":
+        import httpx
+        import os
+
+        urls = tool_args.get("urls", [])
+        check_in = tool_args.get("checkIn")
+        check_out = tool_args.get("checkOut")
+        adults = tool_args.get("adults", 2)
+        children = tool_args.get("children", 0)
+        rooms = tool_args.get("rooms", 1)
+
+        # Validation
+        if not urls or not isinstance(urls, list):
+            return {
+                "success": False,
+                "error": "urls must be a list"
+            }
+
+        if len(urls) < 2 or len(urls) > 5:
+            return {
+                "success": False,
+                "error": "Provide 2-5 hotel URLs"
+            }
+
+        # Validate all URLs
+        for url in urls:
+            if not url or not isinstance(url, str) or 'booking.com' not in url:
+                return {
+                    "success": False,
+                    "error": f"Invalid Booking.com URL: {url}"
+                }
+
+        print(f"[scrape_and_compare_hotels] Scraping {len(urls)} hotels in batch")
+
+        # Call backend batch endpoint
+        backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+        batch_endpoint = f"{backend_url}/scraper/batch"
+
+        # Get hotel token from environment
+        hotel_token = os.getenv("HOTEL_TOKEN")
+        if not hotel_token:
+            return {
+                "success": False,
+                "error": "Hotel authentication token not configured"
+            }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    batch_endpoint,
+                    headers={
+                        "Authorization": f"Bearer {hotel_token}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "urls": urls,
+                        "checkIn": check_in,
+                        "checkOut": check_out,
+                        "adults": adults,
+                        "children": children,
+                        "rooms": rooms
+                    }
+                )
+
+                if response.status_code != 200:
+                    return {
+                        "success": False,
+                        "error": f"Failed to start batch scraping: {response.text}"
+                    }
+
+                data = response.json()
+                print(f"[scrape_and_compare_hotels] Batch started: {data.get('batchId')}")
+
+                return {
+                    "success": True,
+                    "batchId": data.get("batchId"),
+                    "totalHotels": data.get("totalHotels"),
+                    "message": data.get("message"),
+                    "estimatedTime": data.get("estimatedTime"),
+                    "realtimeEnabled": True
+                }
+
+        except httpx.RequestError as e:
+            print(f"[scrape_and_compare_hotels] Request error: {e}")
+            return {
+                "success": False,
+                "error": f"Failed to connect to batch scraping service: {str(e)}"
+            }
+        except Exception as e:
+            print(f"[scrape_and_compare_hotels] Unexpected error: {e}")
+            return {
+                "success": False,
+                "error": f"Unexpected error: {str(e)}"
             }
 
     else:

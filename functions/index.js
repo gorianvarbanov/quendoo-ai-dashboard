@@ -565,6 +565,63 @@ export const scrapeBooking = onRequest(
         }
       }
 
+      // Update batch document if this scrape is part of a batch
+      const { batchId, batchIndex } = request.body || {};
+      if (batchId && cacheKey) {
+        try {
+          console.log("[scrapeBooking] Updating batch document:", batchId, "index:", batchIndex);
+
+          const batchRef = db.collection('scraper_batches').doc(batchId);
+          const batchDoc = await batchRef.get();
+
+          if (batchDoc.exists) {
+            const batchData = batchDoc.data();
+            const hotels = batchData.hotels || [];
+
+            // Find hotel by cacheKey
+            const hotelIndex = hotels.findIndex(h => h.cacheKey === cacheKey);
+
+            if (hotelIndex !== -1) {
+              // Update hotel status
+              hotels[hotelIndex] = {
+                ...hotels[hotelIndex],
+                status: 'completed',
+                hotelName: hotelData.hotelName,
+                minPrice: hotelData.prices && hotelData.prices.length > 0 ? Math.min(...hotelData.prices) : null,
+                maxPrice: hotelData.prices && hotelData.prices.length > 0 ? Math.max(...hotelData.prices) : null,
+                currency: hotelData.rooms && hotelData.rooms[0] ? hotelData.rooms[0].currency : 'USD',
+                rating: hotelData.rating || null,
+                roomCount: hotelData.rooms ? hotelData.rooms.length : 0
+              };
+
+              // Calculate progress
+              const completedHotels = hotels.filter(h => h.status === 'completed').length;
+              const failedHotels = hotels.filter(h => h.status === 'error').length;
+              const progress = Math.round((completedHotels / batchData.totalHotels) * 100);
+
+              // Check if all done
+              const allDone = (completedHotels + failedHotels) >= batchData.totalHotels;
+              const newStatus = allDone ? (completedHotels > 0 ? 'completed' : 'error') : 'in_progress';
+
+              // Update batch
+              await batchRef.update({
+                hotels: hotels,
+                completedHotels: completedHotels,
+                failedHotels: failedHotels,
+                progress: progress,
+                status: newStatus,
+                updatedAt: Math.floor(Date.now() / 1000)
+              });
+
+              console.log("[scrapeBooking] Updated batch:", batchId, "progress:", progress + "%");
+            }
+          }
+        } catch (batchError) {
+          console.error("[scrapeBooking] Failed to update batch document:", batchError);
+          // Don't fail the whole request if batch update fails
+        }
+      }
+
       // Return structured data
       response.json({
         success: true,
@@ -577,7 +634,7 @@ export const scrapeBooking = onRequest(
       console.error("[scrapeBooking] Error:", error);
 
       // Save error to Firestore cache if cacheKey provided
-      const { cacheKey: errorCacheKey, url: errorUrl, checkIn: errorCheckIn, checkOut: errorCheckOut } = request.body || {};
+      const { cacheKey: errorCacheKey, url: errorUrl, checkIn: errorCheckIn, checkOut: errorCheckOut, batchId: errorBatchId } = request.body || {};
       if (errorCacheKey) {
         try {
           await db.collection('competitor_price_cache').doc(errorCacheKey).set({
@@ -591,6 +648,56 @@ export const scrapeBooking = onRequest(
           console.log("[scrapeBooking] Saved error to Firestore cache:", errorCacheKey);
         } catch (firestoreError) {
           console.error("[scrapeBooking] Failed to save error to Firestore:", firestoreError);
+        }
+      }
+
+      // Update batch document if error occurred during batch scraping
+      if (errorBatchId && errorCacheKey) {
+        try {
+          console.log("[scrapeBooking] Updating batch with error:", errorBatchId);
+
+          const batchRef = db.collection('scraper_batches').doc(errorBatchId);
+          const batchDoc = await batchRef.get();
+
+          if (batchDoc.exists) {
+            const batchData = batchDoc.data();
+            const hotels = batchData.hotels || [];
+
+            // Find hotel by cacheKey
+            const hotelIndex = hotels.findIndex(h => h.cacheKey === errorCacheKey);
+
+            if (hotelIndex !== -1) {
+              // Update hotel with error status
+              hotels[hotelIndex] = {
+                ...hotels[hotelIndex],
+                status: 'error',
+                error: error.message
+              };
+
+              // Calculate progress
+              const completedHotels = hotels.filter(h => h.status === 'completed').length;
+              const failedHotels = hotels.filter(h => h.status === 'error').length;
+              const progress = Math.round((completedHotels / batchData.totalHotels) * 100);
+
+              // Check if all done
+              const allDone = (completedHotels + failedHotels) >= batchData.totalHotels;
+              const newStatus = allDone ? (completedHotels > 0 ? 'completed' : 'error') : 'in_progress';
+
+              // Update batch
+              await batchRef.update({
+                hotels: hotels,
+                completedHotels: completedHotels,
+                failedHotels: failedHotels,
+                progress: progress,
+                status: newStatus,
+                updatedAt: Math.floor(Date.now() / 1000)
+              });
+
+              console.log("[scrapeBooking] Updated batch with error:", errorBatchId, "progress:", progress + "%");
+            }
+          }
+        } catch (batchError) {
+          console.error("[scrapeBooking] Failed to update batch document with error:", batchError);
         }
       }
 
