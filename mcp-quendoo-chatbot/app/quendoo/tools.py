@@ -535,25 +535,41 @@ CRITICAL: Do NOT stop checking after 1-2 attempts! Scraping needs 30-40 seconds 
     },
     {
         "name": "scrape_and_compare_hotels",
-        "description": """Scrape multiple hotels simultaneously (2-5 hotels) and compare their prices.
+        "description": """🔥 USE THIS TOOL when user provides 2 or more Booking.com URLs! Scrapes multiple hotels simultaneously and shows comparison table.
 
-Perfect for comparing competitor prices across multiple properties in one go!
+⚠️ WHEN TO USE (automatic detection):
+- User gives 2+ hotel URLs (even without saying "compare")
+- User says "сравни", "compare", "which is cheaper"
+- User asks about multiple hotels at once
 
-⚠️ WORKFLOW:
-1. Call this tool with 2-5 Booking.com URLs → Returns batchId immediately
-2. Tell user: "Scraping N hotels for comparison, this takes 1-2 minutes..."
-3. Frontend will show real-time progress automatically via Firestore
-4. Results appear in comparison table when all hotels complete
+⚠️ CRITICAL - ALWAYS prefer this over scrape_competitor_prices when there are multiple URLs!
 
-IMPORTANT:
-- All hotels scrape in PARALLEL (much faster than sequential)
-- You don't need to poll status - frontend handles it
-- Just return the batchId and let the UI take over
+⚠️ REQUIRED PARAMETERS:
+- urls: List of 2-5 Booking.com URLs (REQUIRED)
+- checkIn: Date in YYYY-MM-DD format (REQUIRED - ask user or extract from context)
+- checkOut: Date in YYYY-MM-DD format (REQUIRED - ask user or extract from context)
+- adults: Number of adults (default: 2)
+- children: Number of children (default: 0)
+- rooms: Number of rooms (default: 1)
 
-USE CASES:
-- "Compare prices for Hotel A, Hotel B, and Hotel C"
-- "Which is cheaper: Hotel X or Hotel Y?"
-- "Show me pricing for these 3 hotels: [urls]"
+WORKFLOW:
+1. Extract dates from user message (e.g., "1-6 юли" → 2025-07-01 to 2025-07-06)
+2. If dates missing, ask user: "For which dates do you want to compare prices?"
+3. Call this tool with all URLs + dates → Returns batchId immediately
+4. Tell user: "Scraping N hotels for [dates], this takes 1-2 minutes..."
+5. Frontend shows real-time progress + comparison table
+
+BENEFITS:
+- Parallel scraping (3-5x faster than sequential)
+- Automatic comparison table with sorting
+- Currency conversion (USD/EUR toggle)
+- Highlights cheapest hotel in green
+- Shows search parameters (dates, guests) in results
+
+EXAMPLES:
+- User: "сравни тези 2 хотела за 1-6 юли: url1, url2" → Extract dates: 2025-07-01, 2025-07-06
+- User: "compare Hotel A vs Hotel B" → Ask: "For which dates?"
+- User: "prices for: url1, url2, url3 from March 15-20" → Extract: 2025-03-15, 2025-03-20
 """,
         "inputSchema": {
             "type": "object",
@@ -569,11 +585,11 @@ USE CASES:
                 },
                 "checkIn": {
                     "type": "string",
-                    "description": "Check-in date in YYYY-MM-DD format. If not provided, extracts from URL or uses defaults."
+                    "description": "Check-in date in YYYY-MM-DD format. REQUIRED - extract from user message or ask user."
                 },
                 "checkOut": {
                     "type": "string",
-                    "description": "Check-out date in YYYY-MM-DD format. If not provided, extracts from URL or uses defaults."
+                    "description": "Check-out date in YYYY-MM-DD format. REQUIRED - extract from user message or ask user."
                 },
                 "adults": {
                     "type": "integer",
@@ -597,7 +613,7 @@ USE CASES:
                     "default": 1
                 }
             },
-            "required": ["urls"]
+            "required": ["urls", "checkIn", "checkOut"]
         }
     }
 ]
@@ -1310,18 +1326,14 @@ Provide only the requested output without any additional explanation or preamble
             "cacheKey": cache_key  # Pass cache key to Cloud Function
         }
 
-        # Trigger Cloud Function in background
-        async def trigger_scraping():
-            """Background task to trigger Cloud Function"""
-            try:
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    await client.post(cloud_function_url, json=payload)
-            except Exception as e:
-                # Log error but don't fail
-                print(f"[scrape_competitor_prices] Background scraping error: {e}")
-
-        # Start background task without waiting
-        asyncio.create_task(trigger_scraping())
+        # Trigger Cloud Function synchronously (fire and forget - don't wait for scraping to complete)
+        try:
+            import httpx
+            with httpx.Client(timeout=5.0) as client:
+                response = client.post(cloud_function_url, json=payload)
+                print(f"[scrape_competitor_prices] Triggered Cloud Function: {response.status_code}")
+        except Exception as e:
+            print(f"[scrape_competitor_prices] Error triggering Cloud Function: {e}")
 
         # Return immediately to AI
         response = {
@@ -1428,13 +1440,35 @@ Provide only the requested output without any additional explanation or preamble
                 "error": "Provide 2-5 hotel URLs"
             }
 
-        # Validate all URLs
+        # Fix truncated URLs (AI sometimes truncates .html endings)
+        fixed_urls = []
         for url in urls:
             if not url or not isinstance(url, str) or 'booking.com' not in url:
                 return {
                     "success": False,
                     "error": f"Invalid Booking.com URL: {url}"
                 }
+
+            # Fix common truncations (check more specific patterns first):
+            # .bg.ht -> .bg.html
+            # .bg. -> .bg.html
+            # .ht -> .html
+            if url.endswith('.bg.ht'):
+                url = url + 'ml'
+                print(f"[scrape_and_compare_hotels] Fixed truncated URL .bg.ht -> {url}")
+            elif url.endswith('.ht'):
+                url = url + 'ml'
+                print(f"[scrape_and_compare_hotels] Fixed truncated URL .ht -> {url}")
+            elif url.endswith('.bg.'):
+                url = url + 'html'
+                print(f"[scrape_and_compare_hotels] Fixed truncated URL .bg. -> {url}")
+            elif url.endswith('.') and not url.endswith('.html'):
+                url = url + 'html'
+                print(f"[scrape_and_compare_hotels] Fixed truncated URL . -> {url}")
+
+            fixed_urls.append(url)
+
+        urls = fixed_urls
 
         print(f"[scrape_and_compare_hotels] Scraping {len(urls)} hotels in batch")
 
@@ -1559,38 +1593,52 @@ Provide only the requested output without any additional explanation or preamble
         if urls_to_scrape:
             cloud_function_url = os.getenv("SCRAPER_CLOUD_FUNCTION_URL", "https://us-central1-quendoo-ai-dashboard.cloudfunctions.net/scrapeBooking")
 
-            async def trigger_scraping():
-                """Background task to trigger Cloud Functions for uncached hotels"""
+            # Fire and forget - trigger all Cloud Functions in background threads
+            import threading
+            import requests
+
+            def trigger_cloud_function(url, cache_key, hotel_index):
+                """Trigger Cloud Function in background thread (fire and forget)"""
                 try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
-                        tasks = []
-                        for url, cache_key in urls_to_scrape:
-                            # Find hotel index in full hotels list
-                            hotel_index = next(i for i, h in enumerate(hotels) if h["cacheKey"] == cache_key)
-
-                            task = client.post(
-                                cloud_function_url,
-                                json={
-                                    "url": url,
-                                    "checkIn": check_in,
-                                    "checkOut": check_out,
-                                    "adults": adults,
-                                    "children": children,
-                                    "rooms": rooms,
-                                    "cacheKey": cache_key,
-                                    "batchId": batch_id,
-                                    "batchIndex": hotel_index
-                                }
-                            )
-                            tasks.append(task)
-
-                        # Fire all requests in parallel
-                        await asyncio.gather(*tasks, return_exceptions=True)
+                    response = requests.post(
+                        cloud_function_url,
+                        json={
+                            "url": url,
+                            "checkIn": check_in,
+                            "checkOut": check_out,
+                            "adults": adults,
+                            "children": children,
+                            "rooms": rooms,
+                            "cacheKey": cache_key,
+                            "batchId": batch_id,
+                            "batchIndex": hotel_index
+                        },
+                        timeout=90  # Cloud Function needs 30-60s to complete
+                    )
+                    print(f"[scrape_and_compare_hotels] Triggered Cloud Function for {url}: {response.status_code}")
                 except Exception as e:
-                    print(f"[scrape_and_compare_hotels] Background scraping error: {e}")
+                    print(f"[scrape_and_compare_hotels] Error triggering Cloud Function for {url}: {e}")
 
-            # Start background task without waiting
-            asyncio.create_task(trigger_scraping())
+            # Start all scraping jobs in background threads (fire and forget)
+            # Add staggered delay to avoid triggering rate limits (2s between requests)
+            for idx, (url, cache_key) in enumerate(urls_to_scrape):
+                try:
+                    hotel_index = next(i for i, h in enumerate(hotels) if h["cacheKey"] == cache_key)
+
+                    # Stagger requests by 2 seconds each to reduce rate limiting
+                    if idx > 0:
+                        import time as time_module
+                        time_module.sleep(2)
+
+                    thread = threading.Thread(
+                        target=trigger_cloud_function,
+                        args=(url, cache_key, hotel_index),
+                        daemon=True  # Daemon thread won't block return
+                    )
+                    thread.start()
+                    print(f"[scrape_and_compare_hotels] Started background thread for {url}")
+                except Exception as e:
+                    print(f"[scrape_and_compare_hotels] Error starting thread for {url}: {e}")
         else:
             print(f"[scrape_and_compare_hotels] All hotels are cached, no scraping needed")
 

@@ -869,15 +869,51 @@ watch(settingsDrawer, (isOpen) => {
 }
 
 .sidebar-logo-icon {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   object-fit: cover;
+  animation: logoFadeIn 0.8s ease-out;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-logo-icon:hover {
+  transform: scale(1.05) rotate(5deg);
+}
+
+@keyframes logoFadeIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.8) translateY(-10px);
+  }
+  60% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
 }
 
 .sidebar-title {
   font-size: 16px;
   font-weight: 600;
+  animation: titleFadeIn 1s ease-out 0.2s backwards;
+  background: linear-gradient(135deg, #296fdc 0%, #29aff3 50%, #03fecc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+@keyframes titleFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .sidebar-actions {

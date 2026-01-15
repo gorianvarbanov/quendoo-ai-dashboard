@@ -297,10 +297,10 @@ export const scrapeBooking = onRequest(
 
       await updateProgress(30, 'Loading Booking.com page...');
 
-      // Navigate with timeout
+      // Navigate with timeout (increased to 60s to handle slow responses)
       await page.goto(searchUrl, {
         waitUntil: "networkidle0",
-        timeout: 30000
+        timeout: 60000
       });
 
       await updateProgress(60, 'Page loaded, waiting for content...');
@@ -582,14 +582,37 @@ export const scrapeBooking = onRequest(
             const hotelIndex = hotels.findIndex(h => h.cacheKey === cacheKey);
 
             if (hotelIndex !== -1) {
+              // Calculate min/max prices from rooms (more accurate than prices array)
+              const roomPrices = hotelData.rooms
+                ? hotelData.rooms
+                    .map(r => r.price)
+                    .filter(p => p && p > 0)
+                : [];
+
+              // Normalize currency symbol to currency code
+              const normalizeCurrency = (curr) => {
+                if (!curr) return 'USD';
+                const currencyMap = {
+                  '$': 'USD',
+                  '€': 'EUR',
+                  'лв': 'BGN',
+                  'BGN': 'BGN',
+                  'USD': 'USD',
+                  'EUR': 'EUR'
+                };
+                return currencyMap[curr] || 'USD';
+              };
+
+              const rawCurrency = hotelData.rooms && hotelData.rooms[0] ? hotelData.rooms[0].currency : 'USD';
+
               // Update hotel status
               hotels[hotelIndex] = {
                 ...hotels[hotelIndex],
                 status: 'completed',
                 hotelName: hotelData.hotelName,
-                minPrice: hotelData.prices && hotelData.prices.length > 0 ? Math.min(...hotelData.prices) : null,
-                maxPrice: hotelData.prices && hotelData.prices.length > 0 ? Math.max(...hotelData.prices) : null,
-                currency: hotelData.rooms && hotelData.rooms[0] ? hotelData.rooms[0].currency : 'USD',
+                minPrice: roomPrices.length > 0 ? Math.min(...roomPrices) : null,
+                maxPrice: roomPrices.length > 0 ? Math.max(...roomPrices) : null,
+                currency: normalizeCurrency(rawCurrency),
                 rating: hotelData.rating || null,
                 roomCount: hotelData.rooms ? hotelData.rooms.length : 0
               };

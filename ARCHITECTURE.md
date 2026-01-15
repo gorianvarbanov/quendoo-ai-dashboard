@@ -26,7 +26,7 @@
 │  Backend (Node.js + Express)                            │
 │  - Local dev: http://localhost:3100                     │
 │  - Production: https://quendoo-backend-*.run.app        │
-│  - Current revision: quendoo-backend-00114-vfc          │
+│  - Current revision: quendoo-backend-00154-2sp          │
 │                                                          │
 │  Routes:                                                 │
 │  - POST /chat/quendoo - Chat with Claude AI             │
@@ -43,7 +43,7 @@
 │  (Anthropic)    │     │  - Production only (no local dev) │
 │                 │     │  - URL: https://mcp-quendoo-      │
 │                 │     │    chatbot-*.run.app/sse          │
-└─────────────────┘     │  - Current: 00022-f9w             │
+└─────────────────┘     │  - Current: 00026-kfw             │
                         │                                    │
                         │  Main file: app/main.py            │
                         │  Uses: app/api/sse_mcp_routes.py  │
