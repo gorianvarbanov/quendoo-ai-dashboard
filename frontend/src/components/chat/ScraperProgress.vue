@@ -45,6 +45,23 @@
           <strong class="text-subtitle-1">{{ progress.result.hotelName }}</strong>
         </div>
 
+        <!-- Search Parameters -->
+        <div class="search-params mb-3">
+          <v-chip v-if="progress.checkIn && progress.checkOut" size="small" variant="tonal" color="primary" class="mr-2">
+            <v-icon size="small" class="mr-1">mdi-calendar</v-icon>
+            {{ formatDate(progress.checkIn) }} - {{ formatDate(progress.checkOut) }}
+          </v-chip>
+          <v-chip v-if="progress.adults" size="small" variant="tonal" color="primary" class="mr-2">
+            <v-icon size="small" class="mr-1">mdi-account-multiple</v-icon>
+            {{ progress.adults || 2 }} adults
+            <span v-if="progress.children">, {{ progress.children }} children</span>
+          </v-chip>
+          <v-chip v-if="progress.rooms" size="small" variant="tonal" color="primary">
+            <v-icon size="small" class="mr-1">mdi-bed</v-icon>
+            {{ progress.rooms || 1 }} room{{ (progress.rooms || 1) > 1 ? 's' : '' }}
+          </v-chip>
+        </div>
+
         <!-- Summary Chips -->
         <div class="d-flex flex-wrap gap-2 mb-3" v-if="progress.result.prices && progress.result.prices.length">
           <v-chip size="small" variant="outlined">
@@ -128,7 +145,12 @@ const progress = ref({
   progress: 0,
   message: '',
   result: null,
-  error: null
+  error: null,
+  checkIn: null,
+  checkOut: null,
+  adults: null,
+  children: null,
+  rooms: null
 })
 
 const elapsedTime = ref(0)
@@ -138,10 +160,11 @@ let timerInterval = null
 // Currency state
 const selectedCurrency = ref('USD')
 
-// Exchange rates (approximate)
+// Exchange rates (updated regularly)
 const exchangeRates = {
-  USD: { USD: 1, EUR: 0.92 },
-  EUR: { USD: 1.09, EUR: 1 }
+  USD: { USD: 1, EUR: 0.92, BGN: 1.80 },
+  EUR: { USD: 1.09, EUR: 1, BGN: 1.96 },
+  BGN: { USD: 0.56, EUR: 0.51, BGN: 1 }
 }
 
 // Computed
@@ -153,7 +176,31 @@ const timeRemaining = computed(() => {
 // Convert price based on selected currency
 const convertPrice = (price, fromCurrency = 'USD') => {
   if (!price) return 0
-  const rate = exchangeRates[fromCurrency]?.[selectedCurrency.value] || 1
+
+  // Normalize currency symbols to codes (for backward compatibility)
+  const currencyMap = {
+    '$': 'USD',
+    '€': 'EUR',
+    'лв': 'BGN',
+    'BGN': 'BGN',
+    'USD': 'USD',
+    'EUR': 'EUR'
+  }
+
+  const from = currencyMap[(fromCurrency || 'USD')] || (fromCurrency || 'USD').toUpperCase()
+  const to = selectedCurrency.value.toUpperCase()
+
+  // If same currency, no conversion needed
+  if (from === to) return Math.round(price)
+
+  // Get exchange rate
+  const rate = exchangeRates[from]?.[to]
+
+  if (!rate) {
+    console.warn(`No exchange rate for ${from} -> ${to}, using original price`)
+    return Math.round(price)
+  }
+
   return Math.round(price * rate)
 }
 
@@ -161,6 +208,17 @@ const convertPrice = (price, fromCurrency = 'USD') => {
 const getCurrencySymbol = () => {
   const symbols = { USD: '$', EUR: '€' }
   return symbols[selectedCurrency.value] || '$'
+}
+
+// Format date for display
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A'
+  try {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  } catch {
+    return dateStr
+  }
 }
 
 // Methods
@@ -193,7 +251,12 @@ watch(() => props.cacheKey, (newKey) => {
     progress: 0,
     message: 'Стартиране на scraper...',
     result: null,
-    error: null
+    error: null,
+    checkIn: null,
+    checkOut: null,
+    adults: null,
+    children: null,
+    rooms: null
   }
 
   // Start timer
@@ -231,7 +294,12 @@ watch(() => props.cacheKey, (newKey) => {
         progress: data.progress || 0,
         message: data.message || '',
         result: data.result || null,
-        error: data.error || null
+        error: data.error || null,
+        checkIn: data.checkIn || null,
+        checkOut: data.checkOut || null,
+        adults: data.adults || null,
+        children: data.children || null,
+        rooms: data.rooms || null
       }
 
       // Stop timer on completion
@@ -270,7 +338,12 @@ watch(() => props.cacheKey, (newKey) => {
                 progress: data.progress || 0,
                 message: data.message || '',
                 result: data.result || null,
-                error: data.error || null
+                error: data.error || null,
+                checkIn: data.checkIn || null,
+                checkOut: data.checkOut || null,
+                adults: data.adults || null,
+                children: data.children || null,
+                rooms: data.rooms || null
               }
 
               // Stop polling on completion
