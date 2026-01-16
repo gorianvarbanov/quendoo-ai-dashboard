@@ -131,6 +131,7 @@
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '@/firebase'
+import { useCurrencyRates } from '@/composables/useCurrencyRates'
 
 const props = defineProps({
   cacheKey: {
@@ -160,12 +161,8 @@ let timerInterval = null
 // Currency state
 const selectedCurrency = ref('USD')
 
-// Exchange rates (updated regularly)
-const exchangeRates = {
-  USD: { USD: 1, EUR: 0.92, BGN: 1.80 },
-  EUR: { USD: 1.09, EUR: 1, BGN: 1.96 },
-  BGN: { USD: 0.56, EUR: 0.51, BGN: 1 }
-}
+// Use ECB rates from composable
+const { exchangeRates, convertPrice: convertPriceComposable, getCurrencySymbol: getCurrencySymbolComposable } = useCurrencyRates()
 
 // Computed
 const timeRemaining = computed(() => {
@@ -173,41 +170,14 @@ const timeRemaining = computed(() => {
   return Math.max(0, estimated - elapsedTime.value)
 })
 
-// Convert price based on selected currency
+// Wrapper to maintain API compatibility
 const convertPrice = (price, fromCurrency = 'USD') => {
-  if (!price) return 0
-
-  // Normalize currency symbols to codes (for backward compatibility)
-  const currencyMap = {
-    '$': 'USD',
-    '€': 'EUR',
-    'лв': 'BGN',
-    'BGN': 'BGN',
-    'USD': 'USD',
-    'EUR': 'EUR'
-  }
-
-  const from = currencyMap[(fromCurrency || 'USD')] || (fromCurrency || 'USD').toUpperCase()
-  const to = selectedCurrency.value.toUpperCase()
-
-  // If same currency, no conversion needed
-  if (from === to) return Math.round(price)
-
-  // Get exchange rate
-  const rate = exchangeRates[from]?.[to]
-
-  if (!rate) {
-    console.warn(`No exchange rate for ${from} -> ${to}, using original price`)
-    return Math.round(price)
-  }
-
-  return Math.round(price * rate)
+  return convertPriceComposable(price, fromCurrency, selectedCurrency.value)
 }
 
-// Get currency symbol
+// Wrapper to maintain API compatibility
 const getCurrencySymbol = () => {
-  const symbols = { USD: '$', EUR: '€' }
-  return symbols[selectedCurrency.value] || '$'
+  return getCurrencySymbolComposable(selectedCurrency.value)
 }
 
 // Format date for display

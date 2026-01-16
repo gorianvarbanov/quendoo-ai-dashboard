@@ -560,6 +560,215 @@ app.get('/admin/analytics/conversation-stats', requireAuth, async (req, res) => 
   }
 });
 
+// ===========================
+// ECB Currency Exchange Rates
+// ===========================
+
+/**
+ * Fetch latest rates from ECB API
+ * Returns: { USD: 1.0892, BGN: 1.9558, ... }
+ */
+async function fetchFromECB() {
+  // Import fetch at top if not already imported
+  const fetch = (await import('node-fetch')).default;
+
+  // Request daily rates for USD and BGN
+  // BGN is fixed at 1.95583, but we fetch for consistency
+  const currencies = ['USD', 'BGN', 'GBP', 'CHF']; // Extend as needed
+
+  const ecbUrl = `https://data-api.ecb.europa.eu/service/data/EXR/D.${currencies.join('+')}.EUR.SP00.A?format=jsondata&lastNObservations=1`;
+
+  logger.info('[ECB] Calling ECB API', { url: ecbUrl });
+
+  const response = await fetch(ecbUrl, {
+    headers: {
+      'Accept': 'application/json'
+    },
+    signal: AbortSignal.timeout(30000) // 30 second timeout
+  });
+
+  if (!response.ok) {
+    throw new Error(`ECB API error: ${response.status} ${response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  // Parse SDMX JSON structure
+  const rates = {};
+  const observations = data.dataSets[0].series;
+
+  // Extract currency and rate from SDMX structure
+  // Structure: series["0:X:0:0:0"] where X is currency index
+  for (const [key, series] of Object.entries(observations)) {
+    const currencyIndex = parseInt(key.split(':')[1]);
+    const currency = currencies[currencyIndex];
+    const rate = series.observations['0'][0]; // Latest observation value
+    rates[currency] = parseFloat(rate);
+  }
+
+  logger.info('[ECB] Parsed rates', { rates });
+  return rates;
+}
+
+/**
+ * Calculate cross-rates between all currencies
+ * Input: { USD: 1.0892, BGN: 1.9558 }
+ * Output: { USD: { USD: 1, EUR: 0.92, BGN: 1.80 }, ... }
+ */
+function calculateCrossRates(ecbRates) {
+  // ECB rates are EUR-based (e.g., 1 EUR = 1.0892 USD)
+  // We need to calculate USD→EUR, USD→BGN, etc.
+
+  const currencies = ['USD', 'EUR', 'BGN'];
+  const crossRates = {};
+
+  // Add EUR base rate
+  const rates = { EUR: 1.0, ...ecbRates };
+
+  for (const from of currencies) {
+    crossRates[from] = {};
+
+    for (const to of currencies) {
+      if (from === to) {
+        crossRates[from][to] = 1.0;
+      } else {
+        // Cross rate formula: (1 EUR / from rate) * to rate
+        // Example: USD→BGN = (1/1.0892) * 1.9558 = 1.7955
+        const fromRate = rates[from];
+        const toRate = rates[to];
+        crossRates[from][to] = parseFloat((toRate / fromRate).toFixed(4));
+      }
+    }
+  }
+
+  logger.info('[ECB] Calculated cross-rates', { crossRates });
+  return crossRates;
+}
+
+/**
+ * Store rates in Firestore
+ */
+async function storeRates(ecbRates, crossRates) {
+  const { db } = await import('./db/firestore.js');
+  const { FieldValue } = await import('firebase-admin/firestore');
+
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+  const rateDocument = {
+    date: today,
+    timestamp: Math.floor(Date.now() / 1000),
+    updatedAt: FieldValue.serverTimestamp(),
+    baseCurrency: 'EUR',
+    rates: ecbRates,           // Raw ECB rates (EUR-based)
+    crossRates: crossRates,    // Calculated cross-rates (all pairs)
+    source: 'ECB',
+    status: 'success',
+    error: null
+  };
+
+  // Update "latest" document (always current)
+  await db.collection('currency_rates').doc('latest').set(rateDocument);
+
+  // Optional: Store historical snapshot
+  await db.collection('currency_rates_history').doc(today).set(rateDocument);
+
+  logger.info('[ECB] Stored rates in Firestore', { date: today });
+}
+
+/**
+ * Admin endpoint to manually fetch ECB exchange rates
+ * POST /admin/currency/refresh
+ * Headers: Authorization: Bearer <admin-token>
+ * Returns: { success: true, rates: {...}, timestamp: 1768540000 }
+ */
+app.post('/admin/currency/refresh', requireAuth, async (req, res) => {
+  logger.info('[Admin] Manual ECB rate refresh requested');
+
+  try {
+    // Fetch rates from ECB API
+    const rates = await fetchFromECB();
+
+    // Calculate cross-rates (USD ⇄ BGN ⇄ EUR)
+    const crossRates = calculateCrossRates(rates);
+
+    // Store in Firestore
+    await storeRates(rates, crossRates);
+
+    logger.info('[Admin] Successfully updated currency rates');
+
+    return res.json({
+      success: true,
+      rates: crossRates,
+      ecbRates: rates,
+      timestamp: Math.floor(Date.now() / 1000),
+      source: 'ECB'
+    });
+
+  } catch (error) {
+    logger.error('[Admin] ECB rate fetch failed', { error: error.message, stack: error.stack });
+
+    // Store error status in Firestore
+    try {
+      const { db } = await import('./db/firestore.js');
+      const { FieldValue } = await import('firebase-admin/firestore');
+
+      await db.collection('currency_rates').doc('latest').set({
+        status: 'error',
+        error: error.message,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+    } catch (dbError) {
+      logger.error('[Admin] Failed to store error', { error: dbError.message });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Admin endpoint to get current currency rates
+ * GET /admin/currency/rates
+ * Headers: Authorization: Bearer <admin-token>
+ * Returns: { rates: {...}, timestamp: 1768540000, status: 'success' }
+ */
+app.get('/admin/currency/rates', requireAuth, async (req, res) => {
+  try {
+    const { db } = await import('./db/firestore.js');
+    const ratesDoc = await db.collection('currency_rates').doc('latest').get();
+
+    if (!ratesDoc.exists) {
+      return res.json({
+        success: true,
+        rates: null,
+        message: 'No rates found. Click "Refresh Rates" to fetch from ECB.'
+      });
+    }
+
+    const data = ratesDoc.data();
+
+    return res.json({
+      success: true,
+      rates: data.crossRates || null,
+      ecbRates: data.rates || null,
+      timestamp: data.timestamp,
+      date: data.date,
+      status: data.status,
+      error: data.error,
+      updatedAt: data.updatedAt
+    });
+
+  } catch (error) {
+    logger.error('[Admin] Failed to get currency rates', { error: error.message });
+    return res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 /**
  * List all connected MCP servers
  */

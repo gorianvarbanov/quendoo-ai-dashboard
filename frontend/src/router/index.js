@@ -178,6 +178,20 @@ const router = createRouter({
           next('/admin/login')
         }
       }
+    },
+    {
+      path: '/admin/currency',
+      name: 'admin-currency',
+      component: () => import('../views/admin/AdminCurrency.vue'),
+      beforeEnter: async (to, from, next) => {
+        const authStore = useAuthStore()
+        const isAuthenticated = await authStore.verifyAuthentication()
+        if (isAuthenticated) {
+          next()
+        } else {
+          next('/admin/login')
+        }
+      }
     }
   ]
 })

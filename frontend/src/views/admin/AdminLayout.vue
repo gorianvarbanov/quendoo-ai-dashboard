@@ -97,6 +97,14 @@
           rounded="lg"
           class="mb-1"
         />
+        <v-list-item
+          :to="'/admin/currency'"
+          prepend-icon="mdi-currency-usd"
+          title="Currency Rates"
+          value="currency"
+          rounded="lg"
+          class="mb-1"
+        />
 
         <v-divider class="my-3" />
 
