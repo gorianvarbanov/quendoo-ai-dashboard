@@ -285,12 +285,20 @@
 
               <div class="detail-section">
                 <div class="detail-label">Subscription Status</div>
-                <v-chip
-                  :color="getSubscriptionColor(selectedHotel.subscription?.status)"
-                  size="small"
-                >
-                  {{ selectedHotel.subscription?.status || 'N/A' }}
-                </v-chip>
+                <div class="d-flex align-center gap-2">
+                  <v-chip
+                    :color="getSubscriptionColor(selectedHotel.subscription?.status)"
+                    size="small"
+                  >
+                    {{ selectedHotel.subscription?.status || 'N/A' }}
+                  </v-chip>
+                  <v-btn
+                    icon="mdi-pencil"
+                    size="x-small"
+                    variant="text"
+                    @click="openSubscriptionDialog(selectedHotel)"
+                  />
+                </div>
               </div>
 
               <div class="detail-section" v-if="selectedHotel.subscription?.trialEndsAt">
@@ -460,6 +468,98 @@
       </v-card>
     </v-dialog>
 
+    <!-- Subscription Edit Dialog -->
+    <v-dialog
+      v-model="subscriptionDialog"
+      max-width="500"
+    >
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon class="mr-2">mdi-credit-card-edit</v-icon>
+          <span>Edit Subscription</span>
+          <v-spacer />
+          <v-btn
+            icon="mdi-close"
+            variant="text"
+            @click="closeSubscriptionDialog"
+          />
+        </v-card-title>
+
+        <v-divider />
+
+        <v-card-text class="pa-4">
+          <p class="mb-4">
+            Editing subscription for: <strong>{{ pendingSubscriptionHotel?.hotelName }}</strong>
+          </p>
+
+          <v-select
+            v-model="newSubscriptionStatus"
+            label="Subscription Status"
+            :items="subscriptionStatuses"
+            variant="outlined"
+            density="comfortable"
+          />
+
+          <v-select
+            v-model="newSubscriptionPlan"
+            label="Subscription Plan"
+            :items="subscriptionPlans"
+            variant="outlined"
+            density="comfortable"
+            class="mt-4"
+          />
+
+          <v-text-field
+            v-model.number="newMaxMessages"
+            label="Max Messages Per Month"
+            type="number"
+            variant="outlined"
+            density="comfortable"
+            class="mt-4"
+            hint="-1 for unlimited"
+            persistent-hint
+          />
+
+          <v-text-field
+            v-model.number="newMaxConversations"
+            label="Max Conversations"
+            type="number"
+            variant="outlined"
+            density="comfortable"
+            class="mt-4"
+            hint="-1 for unlimited"
+            persistent-hint
+          />
+
+          <v-alert
+            v-if="subscriptionError"
+            type="error"
+            variant="tonal"
+            class="mt-4"
+          >
+            {{ subscriptionError }}
+          </v-alert>
+        </v-card-text>
+
+        <v-card-actions class="pa-4">
+          <v-spacer />
+          <v-btn
+            @click="closeSubscriptionDialog"
+            variant="text"
+          >
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            @click="updateSubscription"
+            :loading="updatingSubscription"
+          >
+            Update Subscription
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- Snackbar for notifications -->
     <v-snackbar
       v-model="snackbar.show"
@@ -493,11 +593,23 @@ const confirmPassword = ref('')
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
 const passwordError = ref('')
+const subscriptionDialog = ref(false)
+const pendingSubscriptionHotel = ref(null)
+const newSubscriptionStatus = ref('')
+const newSubscriptionPlan = ref('')
+const newMaxMessages = ref(-1)
+const newMaxConversations = ref(-1)
+const updatingSubscription = ref(false)
+const subscriptionError = ref('')
 const snackbar = ref({
   show: false,
   message: '',
   color: 'success'
 })
+
+// Subscription options
+const subscriptionStatuses = ['trial', 'active', 'expired', 'cancelled']
+const subscriptionPlans = ['starter', 'professional', 'premium', 'enterprise']
 
 // Table headers
 const headers = [
@@ -689,6 +801,80 @@ async function resetPassword() {
     passwordError.value = error.response?.data?.error || 'Failed to reset password'
   } finally {
     resettingPassword.value = false
+  }
+}
+
+function openSubscriptionDialog(hotel) {
+  pendingSubscriptionHotel.value = hotel
+  newSubscriptionStatus.value = hotel.subscription?.status || 'trial'
+  newSubscriptionPlan.value = hotel.subscription?.plan || 'starter'
+  newMaxMessages.value = hotel.limits?.maxMessagesPerMonth ?? -1
+  newMaxConversations.value = hotel.limits?.maxConversations ?? -1
+  subscriptionError.value = ''
+  subscriptionDialog.value = true
+}
+
+function closeSubscriptionDialog() {
+  subscriptionDialog.value = false
+  pendingSubscriptionHotel.value = null
+  newSubscriptionStatus.value = ''
+  newSubscriptionPlan.value = ''
+  newMaxMessages.value = -1
+  newMaxConversations.value = -1
+  subscriptionError.value = ''
+}
+
+async function updateSubscription() {
+  updatingSubscription.value = true
+  subscriptionError.value = ''
+
+  try {
+    const backendUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3100'
+    const token = localStorage.getItem('quendoo-admin-token')
+
+    await axios.patch(
+      `${backendUrl}/admin/hotels/${pendingSubscriptionHotel.value.hotelId}/subscription`,
+      {
+        status: newSubscriptionStatus.value,
+        plan: newSubscriptionPlan.value,
+        limits: {
+          maxMessagesPerMonth: newMaxMessages.value,
+          maxConversations: newMaxConversations.value
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      }
+    )
+
+    // Update local state
+    const hotel = hotels.value.find(h => h.hotelId === pendingSubscriptionHotel.value.hotelId)
+    if (hotel) {
+      hotel.subscription = {
+        ...hotel.subscription,
+        status: newSubscriptionStatus.value,
+        plan: newSubscriptionPlan.value
+      }
+      hotel.limits = {
+        maxMessagesPerMonth: newMaxMessages.value,
+        maxConversations: newMaxConversations.value
+      }
+    }
+
+    // Update selected hotel if it's the same
+    if (selectedHotel.value?.hotelId === pendingSubscriptionHotel.value.hotelId) {
+      selectedHotel.value = { ...hotel }
+    }
+
+    showSnackbar('Subscription updated successfully', 'success')
+    closeSubscriptionDialog()
+  } catch (error) {
+    console.error('[Admin Hotels] Error updating subscription:', error)
+    subscriptionError.value = error.response?.data?.error || 'Failed to update subscription'
+  } finally {
+    updatingSubscription.value = false
   }
 }
 

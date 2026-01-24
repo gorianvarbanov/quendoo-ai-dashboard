@@ -769,4 +769,77 @@ router.patch('/hotels/:hotelId/password', async (req, res) => {
   }
 });
 
+/**
+ * PATCH /admin/hotels/:hotelId/subscription
+ * Update hotel subscription (admin only)
+ * Body: { status, plan, limits: { maxMessagesPerMonth, maxConversations } }
+ */
+router.patch('/hotels/:hotelId/subscription', async (req, res) => {
+  try {
+    const { hotelId } = req.params;
+    const { status, plan, limits } = req.body;
+
+    if (!status || !plan) {
+      return res.status(400).json({
+        success: false,
+        error: 'Subscription status and plan are required'
+      });
+    }
+
+    const { getFirestore } = await import('../db/firestore.js');
+    const db = await getFirestore();
+
+    // Check if hotel exists
+    const hotelDoc = await db.collection('hotels').doc(hotelId).get();
+    if (!hotelDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'Hotel not found'
+      });
+    }
+
+    const updateData = {
+      'subscription.status': status,
+      'subscription.plan': plan,
+      'subscription.updatedAt': new Date().toISOString(),
+      'updatedAt': new Date().toISOString()
+    };
+
+    // Remove trial end date if switching from trial to active
+    if (status === 'active') {
+      updateData['subscription.trialEndsAt'] = null;
+    }
+
+    // Update limits if provided
+    if (limits) {
+      if (limits.maxMessagesPerMonth !== undefined) {
+        updateData['limits.maxMessagesPerMonth'] = limits.maxMessagesPerMonth;
+      }
+      if (limits.maxConversations !== undefined) {
+        updateData['limits.maxConversations'] = limits.maxConversations;
+      }
+    }
+
+    await db.collection('hotels').doc(hotelId).update(updateData);
+
+    console.log(`[Admin] Subscription updated for hotel: ${hotelId}`, {
+      status,
+      plan,
+      limits
+    });
+
+    res.json({
+      success: true,
+      message: 'Subscription updated successfully'
+    });
+  } catch (error) {
+    console.error('[Admin] Error updating subscription:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update subscription',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 export default router;
