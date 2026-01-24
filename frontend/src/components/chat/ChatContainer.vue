@@ -52,6 +52,7 @@
       <!-- Search Bar -->
       <div class="sidebar-search">
         <v-text-field
+          ref="searchInputRef"
           v-model="searchQuery"
           :placeholder="uiTranslations.searchConversations"
           variant="outlined"
@@ -63,6 +64,9 @@
           class="search-input"
         >
           <template v-slot:append-inner>
+            <v-chip v-if="!searching" size="x-small" variant="outlined" class="mr-1">
+              Ctrl+K
+            </v-chip>
             <v-progress-circular
               v-if="searching"
               indeterminate
@@ -144,6 +148,15 @@
             >
               <v-icon size="18">{{ theme.global.name.value === 'light' ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
             </v-btn>
+            <v-btn
+              icon
+              variant="text"
+              size="small"
+              @click="shortcutsHelpDialog = true"
+              title="Keyboard Shortcuts (Ctrl+/)"
+            >
+              <v-icon size="18">mdi-keyboard</v-icon>
+            </v-btn>
           </div>
         </div>
       </div>
@@ -165,6 +178,48 @@
             <v-icon size="20">mdi-menu</v-icon>
           </v-btn>
           <span class="conversation-title">{{ currentConversation?.title || uiTranslations.newConversation }}</span>
+
+          <v-spacer />
+
+          <!-- Export conversation menu -->
+          <v-menu v-if="currentConversation && currentMessages.length > 0" location="bottom end">
+            <template #activator="{ props }">
+              <v-btn
+                icon
+                variant="text"
+                size="small"
+                v-bind="props"
+                title="Export conversation"
+              >
+                <v-icon size="20">mdi-download</v-icon>
+              </v-btn>
+            </template>
+
+            <v-list density="compact">
+              <v-list-subheader>Export as</v-list-subheader>
+
+              <v-list-item @click="handleExport(currentConversation, 'markdown')">
+                <template #prepend>
+                  <v-icon size="18">mdi-language-markdown</v-icon>
+                </template>
+                <v-list-item-title>Markdown (.md)</v-list-item-title>
+              </v-list-item>
+
+              <v-list-item @click="handleExport(currentConversation, 'pdf')">
+                <template #prepend>
+                  <v-icon size="18">mdi-file-pdf-box</v-icon>
+                </template>
+                <v-list-item-title>PDF (.pdf)</v-list-item-title>
+              </v-list-item>
+
+              <v-list-item @click="handleExport(currentConversation, 'json')">
+                <template #prepend>
+                  <v-icon size="18">mdi-code-json</v-icon>
+                </template>
+                <v-list-item-title>JSON (.json)</v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </v-menu>
         </div>
       </div>
 
@@ -413,6 +468,57 @@
       v-model="availabilityPanelOpen"
       :raw-data="availabilityData"
     />
+
+    <!-- Keyboard Shortcuts Help Dialog -->
+    <v-dialog v-model="shortcutsHelpDialog" max-width="500">
+      <v-card>
+        <v-card-title class="d-flex align-center justify-space-between">
+          <span>Keyboard Shortcuts</span>
+          <v-btn icon variant="text" size="small" @click="shortcutsHelpDialog = false">
+            <v-icon>mdi-close</v-icon>
+          </v-btn>
+        </v-card-title>
+
+        <v-card-text>
+          <v-list density="compact">
+            <v-list-item>
+              <template #prepend>
+                <v-chip size="small" class="mr-2">Ctrl+N</v-chip>
+              </template>
+              <v-list-item-title>New conversation</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item>
+              <template #prepend>
+                <v-chip size="small" class="mr-2">Ctrl+K</v-chip>
+              </template>
+              <v-list-item-title>Search conversations</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item>
+              <template #prepend>
+                <v-chip size="small" class="mr-2">Escape</v-chip>
+              </template>
+              <v-list-item-title>Close dialogs</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item>
+              <template #prepend>
+                <v-chip size="small" class="mr-2">Ctrl+/</v-chip>
+              </template>
+              <v-list-item-title>Show this help</v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-card-text>
+
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="primary" @click="shortcutsHelpDialog = false">
+            Got it
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -425,6 +531,8 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import { chatApi } from '@/services/api'
 import axios from 'axios'
 import { t } from '@/i18n/translations'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import { exportToMarkdown, exportToPDF, exportToJSON } from '@/services/exportService'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 import AvailabilityPanel from './AvailabilityPanel.vue'
@@ -440,6 +548,12 @@ const sidebarOpen = ref(window.innerWidth > 1024)
 
 // Settings drawer state
 const settingsDrawer = ref(false)
+
+// Keyboard shortcuts help dialog
+const shortcutsHelpDialog = ref(false)
+
+// Search input ref for keyboard shortcut focus
+const searchInputRef = ref(null)
 
 // Hotel registration state
 const hotelToken = ref(localStorage.getItem('hotelToken'))
@@ -641,6 +755,50 @@ const recentConversations = computed(() => {
     .slice(0, 20)
 })
 
+// Keyboard shortcuts setup
+useKeyboardShortcuts({
+  // Ctrl+N - New conversation
+  'ctrl+n': (e) => {
+    console.log('[Keyboard] New conversation shortcut triggered')
+    handleNewConversation()
+  },
+
+  // Ctrl+K - Focus search
+  'ctrl+k': (e) => {
+    console.log('[Keyboard] Search shortcut triggered')
+    if (!sidebarOpen.value) {
+      sidebarOpen.value = true
+    }
+    // Focus search input after sidebar opens
+    setTimeout(() => {
+      if (searchInputRef.value) {
+        searchInputRef.value.focus()
+      }
+    }, 100)
+  },
+
+  // Escape - Close drawers/modals
+  'escape': (e) => {
+    console.log('[Keyboard] Escape shortcut triggered')
+    if (settingsDrawer.value) {
+      settingsDrawer.value = false
+    } else if (availabilityPanelOpen.value) {
+      availabilityPanelOpen.value = false
+    } else if (shortcutsHelpDialog.value) {
+      shortcutsHelpDialog.value = false
+    } else if (sidebarOpen.value && window.innerWidth <= 1024) {
+      // Close sidebar on mobile
+      sidebarOpen.value = false
+    }
+  },
+
+  // Ctrl+/ - Show shortcuts help
+  'ctrl+/': (e) => {
+    console.log('[Keyboard] Show shortcuts help')
+    shortcutsHelpDialog.value = true
+  }
+})
+
 // Methods
 function handleSendMessage(content) {
   chatStore.sendMessage(content)
@@ -682,6 +840,41 @@ async function confirmClearHistory() {
     // TODO: Implement clear history endpoint in backend
     // For now, just create a new conversation
     await handleNewConversation()
+  }
+}
+
+// Export conversation handler
+async function handleExport(conversation, format) {
+  console.log(`[ChatContainer] Exporting conversation ${conversation.id} as ${format}`)
+
+  try {
+    // Get messages for this conversation
+    const conversationMessages = currentMessages.value
+
+    if (conversationMessages.length === 0) {
+      console.error('[ChatContainer] No messages to export')
+      return
+    }
+
+    // Export based on format
+    switch (format) {
+      case 'markdown':
+        exportToMarkdown(conversation, conversationMessages)
+        break
+      case 'pdf':
+        exportToPDF(conversation, conversationMessages)
+        break
+      case 'json':
+        exportToJSON(conversation, conversationMessages)
+        break
+      default:
+        console.error('[ChatContainer] Unknown export format:', format)
+    }
+
+    console.log(`[ChatContainer] Export successful: ${format}`)
+  } catch (err) {
+    console.error('[ChatContainer] Export failed:', err)
+    error.value = `Failed to export conversation: ${err.message}`
   }
 }
 

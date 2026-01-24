@@ -37,6 +37,14 @@ export function useCurrencyRates() {
     if (subscriptionCount === 1) {
       console.log('[useCurrencyRates] Starting Firestore listener')
 
+      // Check if db is available
+      if (!db) {
+        console.error('[useCurrencyRates] Firestore db is not initialized')
+        isLoading.value = false
+        error.value = 'Firestore not initialized'
+        return
+      }
+
       const docRef = doc(db, 'currency_rates', 'latest')
 
       unsubscribe = onSnapshot(
