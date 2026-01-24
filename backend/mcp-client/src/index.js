@@ -593,8 +593,20 @@ async function fetchFromECB() {
 
   const data = await response.json();
 
+  logger.info('[ECB] Raw API response structure', {
+    hasDataSets: !!data.dataSets,
+    dataSetCount: data.dataSets?.length,
+    firstDataSetKeys: data.dataSets?.[0] ? Object.keys(data.dataSets[0]) : []
+  });
+
   // Parse SDMX JSON structure
   const rates = {};
+
+  if (!data.dataSets || !data.dataSets[0] || !data.dataSets[0].series) {
+    logger.error('[ECB] Invalid API response structure', { data: JSON.stringify(data, null, 2) });
+    throw new Error('ECB API returned invalid data structure');
+  }
+
   const observations = data.dataSets[0].series;
 
   // Extract currency and rate from SDMX structure
@@ -602,8 +614,34 @@ async function fetchFromECB() {
   for (const [key, series] of Object.entries(observations)) {
     const currencyIndex = parseInt(key.split(':')[1]);
     const currency = currencies[currencyIndex];
-    const rate = series.observations['0'][0]; // Latest observation value
+
+    if (!series.observations) {
+      logger.warn('[ECB] No observations for currency', { currency, key });
+      continue;
+    }
+
+    // Get first available observation (ECB may use "0" or "1" as key)
+    const observationKeys = Object.keys(series.observations);
+    if (observationKeys.length === 0) {
+      logger.warn('[ECB] Empty observations for currency', { currency, key });
+      continue;
+    }
+
+    const firstKey = observationKeys[0];
+    const observation = series.observations[firstKey];
+
+    if (!observation || !observation[0]) {
+      logger.warn('[ECB] Invalid observation data for currency', { currency, key, firstKey, observation });
+      continue;
+    }
+
+    const rate = observation[0]; // Latest observation value
     rates[currency] = parseFloat(rate);
+    logger.info('[ECB] Parsed rate', { currency, rate, observationKey: firstKey });
+  }
+
+  if (Object.keys(rates).length === 0) {
+    throw new Error('No valid rates found in ECB response');
   }
 
   logger.info('[ECB] Parsed rates', { rates });
@@ -649,9 +687,10 @@ function calculateCrossRates(ecbRates) {
  * Store rates in Firestore
  */
 async function storeRates(ecbRates, crossRates) {
-  const { db } = await import('./db/firestore.js');
+  const { getFirestore } = await import('./db/firestore.js');
   const { FieldValue } = await import('firebase-admin/firestore');
 
+  const db = await getFirestore();
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
   const rateDocument = {
@@ -709,8 +748,10 @@ app.post('/admin/currency/refresh', requireAuth, async (req, res) => {
 
     // Store error status in Firestore
     try {
-      const { db } = await import('./db/firestore.js');
+      const { getFirestore } = await import('./db/firestore.js');
       const { FieldValue } = await import('firebase-admin/firestore');
+
+      const db = await getFirestore();
 
       await db.collection('currency_rates').doc('latest').set({
         status: 'error',
@@ -736,7 +777,8 @@ app.post('/admin/currency/refresh', requireAuth, async (req, res) => {
  */
 app.get('/admin/currency/rates', requireAuth, async (req, res) => {
   try {
-    const { db } = await import('./db/firestore.js');
+    const { getFirestore } = await import('./db/firestore.js');
+    const db = await getFirestore();
     const ratesDoc = await db.collection('currency_rates').doc('latest').get();
 
     if (!ratesDoc.exists) {
