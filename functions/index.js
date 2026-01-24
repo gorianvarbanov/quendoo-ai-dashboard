@@ -729,14 +729,67 @@ export const scrapeBooking = onRequest(
         }
 
         // ===== EXTRACT ROOMS WITH ENHANCED DATA =====
-        const roomBlocks = document.querySelectorAll([
+        console.log('[Scraper] Starting room extraction...');
+
+        // Try multiple selector strategies for room blocks
+        let roomBlocks = document.querySelectorAll([
           "[data-block-id]",
           ".hprt-table tbody tr",
           ".room-table tbody tr",
           "[data-testid='room-table'] tbody tr",
           ".roomstable tbody tr",
-          ".ftb-room-row"
+          ".ftb-room-row",
+          // NEW: Additional selectors for 2026 Booking.com layout
+          "[data-testid='roomtable-row']",
+          "[data-testid='room-row']",
+          "tr[data-block-id]",
+          ".js-room-container",
+          "[class*='RoomRow']",
+          "[class*='room-row']",
+          "table[data-testid*='room'] tbody tr",
+          "[data-testid='property-card__room-list'] > *"
         ].join(","));
+
+        console.log(`[Scraper] Initial query found ${roomBlocks.length} room blocks`);
+
+        // Fallback: If no rooms found, try broader table search
+        if (roomBlocks.length === 0) {
+          console.warn('[Scraper] No rooms found with primary selectors, trying fallback...');
+
+          // Look for any table that might contain rooms
+          const tables = document.querySelectorAll('table');
+          console.log(`[Scraper] Found ${tables.length} tables on page`);
+
+          tables.forEach((table, idx) => {
+            const rows = table.querySelectorAll('tbody tr');
+            if (rows.length > 0) {
+              console.log(`[Scraper] Table ${idx} has ${rows.length} rows`);
+              // Check if any row contains price information
+              const hasPrice = Array.from(rows).some(row =>
+                /[\d\s,.]+/.test(row.textContent) &&
+                /(€|лв|\$|USD|EUR|BGN)/i.test(row.textContent)
+              );
+              if (hasPrice) {
+                console.log(`[Scraper] Table ${idx} contains price data, using its rows`);
+                roomBlocks = rows;
+              }
+            }
+          });
+
+          console.log(`[Scraper] After fallback: ${roomBlocks.length} room blocks`);
+        }
+
+        // Debug: Log selectors that matched
+        if (roomBlocks.length > 0) {
+          const firstRoom = roomBlocks[0];
+          console.log('[Scraper] First room element classes:', firstRoom.className);
+          console.log('[Scraper] First room data attributes:',
+            Array.from(firstRoom.attributes)
+              .filter(attr => attr.name.startsWith('data-'))
+              .map(attr => `${attr.name}="${attr.value}"`)
+              .join(', ')
+          );
+        }
 
         roomBlocks.forEach((room, index) => {
           try {
@@ -747,18 +800,28 @@ export const scrapeBooking = onRequest(
               ".hprt-roomtype-link",
               ".room-name",
               ".roomType",
-              "[class*='room'][class*='name']"
+              "[class*='room'][class*='name']",
+              // NEW: Additional selectors for 2026 layout
+              "[data-testid='title']",
+              "a[href*='room']",
+              "h3", "h4", // Headers might contain room names
+              ".bui-card__title",
+              "[class*='RoomName']",
+              "[class*='room-type']"
             ];
             for (const selector of roomNameSelectors) {
               const el = room.querySelector(selector);
               if (el && el.textContent.trim()) {
                 roomName = el.textContent.trim();
+                console.log(`[Room ${index}] Found room name "${roomName}" via selector: ${selector}`);
                 break;
               }
             }
 
             if (!roomName) {
-              console.warn(`[Room ${index}] No room name found, skipping`);
+              // Debug: log room content to help identify selector
+              const roomText = room.textContent.trim().substring(0, 200);
+              console.warn(`[Room ${index}] No room name found. Room content preview: "${roomText}..."`);
               return; // Skip this room
             }
 
@@ -766,9 +829,13 @@ export const scrapeBooking = onRequest(
             const priceData = extractPriceData(room);
 
             if (!priceData.finalPrice || priceData.finalPrice <= 0) {
-              console.warn(`[Room ${index}] No valid price found for "${roomName}", skipping`);
+              // Debug: log room content to help identify price selector
+              const priceAreaText = room.textContent.match(/[\d\s,.]+\s*(€|лв|\$|USD|EUR|BGN)/gi);
+              console.warn(`[Room ${index}] No valid price found for "${roomName}". Price patterns in content:`, priceAreaText);
               return; // Skip rooms without valid price
             }
+
+            console.log(`[Room ${index}] Successfully extracted: "${roomName}" - ${priceData.finalPrice} ${priceData.currency}`);
 
             // Extract meal plan
             const mealPlan = extractMealPlan(room);
@@ -840,6 +907,8 @@ export const scrapeBooking = onRequest(
 
         data.extractionQuality.hasRooms = data.rooms.length > 0;
         data.extractionQuality.hasPrices = data.rooms.some(r => r.finalPrice > 0);
+
+        console.log(`[Scraper] Room extraction complete: ${data.rooms.length} rooms extracted from ${roomBlocks.length} room blocks`);
 
         // ===== EXTRACT SUMMARY PRICES (fallback) =====
         // Only if no rooms were extracted, try to get prices from summary
