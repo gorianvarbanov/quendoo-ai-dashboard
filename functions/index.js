@@ -283,15 +283,28 @@ export const scrapeBooking = onRequest(
 
       // Build URL with search parameters
       let searchUrl = url;
+      const urlObj = new URL(url);
+
+      // Set dates if provided
       if (checkIn && checkOut) {
-        const urlObj = new URL(url);
         urlObj.searchParams.set("checkin", checkIn);
         urlObj.searchParams.set("checkout", checkOut);
         urlObj.searchParams.set("group_adults", adults);
         urlObj.searchParams.set("group_children", children);
         urlObj.searchParams.set("no_rooms", rooms);
-        searchUrl = urlObj.toString();
       }
+
+      // CRITICAL FIX: Auto-detect and force correct currency for Bulgarian hotels
+      if (url.includes('/hotel/bg/') || url.includes('.bg.html')) {
+        console.log('[scrapeBooking] Bulgarian hotel detected, forcing currency to BGN');
+        urlObj.searchParams.set("selected_currency", "BGN");
+      } else if (!urlObj.searchParams.has("selected_currency")) {
+        // Default to EUR for other European hotels
+        console.log('[scrapeBooking] No currency specified, defaulting to EUR');
+        urlObj.searchParams.set("selected_currency", "EUR");
+      }
+
+      searchUrl = urlObj.toString();
 
       console.log("[scrapeBooking] Navigating to:", searchUrl);
 
