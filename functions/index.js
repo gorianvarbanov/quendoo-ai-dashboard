@@ -422,6 +422,7 @@ export const scrapeBooking = onRequest(
 
             if (finalPriceEl) {
               const finalPriceText = finalPriceEl.textContent.trim();
+              console.log('[extractPriceData] Final price element text:', finalPriceText);
               const finalPriceMatch = finalPriceText.match(/([\d\s,.]+)/);
               if (finalPriceMatch) {
                 priceData.finalPrice = parseFloat(finalPriceMatch[1].replace(/[\s,]/g, ""));
@@ -429,6 +430,7 @@ export const scrapeBooking = onRequest(
 
               // Extract currency
               priceData.currency = extractCurrency(finalPriceText, finalPriceEl);
+              console.log('[extractPriceData] Extracted currency:', priceData.currency, 'from text:', finalPriceText);
             }
           } else {
             // No discount - single price
@@ -451,6 +453,7 @@ export const scrapeBooking = onRequest(
 
             if (priceElement) {
               const priceText = priceElement.textContent.trim();
+              console.log('[extractPriceData] Single price element text:', priceText);
               const priceMatch = priceText.match(/([\d\s,.]+)/);
               if (priceMatch) {
                 const price = parseFloat(priceMatch[1].replace(/[\s,]/g, ""));
@@ -460,6 +463,7 @@ export const scrapeBooking = onRequest(
 
               // Extract currency
               priceData.currency = extractCurrency(priceText, priceElement);
+              console.log('[extractPriceData] Extracted currency:', priceData.currency, 'from text:', priceText);
             }
           }
 
@@ -827,6 +831,14 @@ export const scrapeBooking = onRequest(
 
             // Extract price data (enhanced)
             const priceData = extractPriceData(room);
+
+            // Debug: Log raw price extraction details
+            console.log(`[Room ${index}] Price extraction for "${roomName}":`, {
+              finalPrice: priceData.finalPrice,
+              basePrice: priceData.basePrice,
+              currency: priceData.currency,
+              isDiscounted: priceData.isDiscounted
+            });
 
             if (!priceData.finalPrice || priceData.finalPrice <= 0) {
               // Debug: log room content to help identify price selector
