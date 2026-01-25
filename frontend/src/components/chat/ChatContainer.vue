@@ -1708,7 +1708,7 @@ watch(settingsDrawer, (isOpen) => {
 
 .conv-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 4px;
@@ -1719,8 +1719,10 @@ watch(settingsDrawer, (isOpen) => {
   font-size: 0.875rem;
   color: rgb(var(--v-theme-on-surface));
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-word;
 }
 
 .favorite-btn {
