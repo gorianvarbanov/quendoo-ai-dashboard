@@ -1023,8 +1023,13 @@ useKeyboardShortcuts({
 })
 
 // Methods
-function handleSendMessage(content) {
-  chatStore.sendMessage(content)
+function handleSendMessage(messageData) {
+  // messageData can be either a string (old format) or an object with content and documentIds
+  if (typeof messageData === 'string') {
+    chatStore.sendMessage(messageData)
+  } else {
+    chatStore.sendMessage(messageData.content, null, messageData.documentIds)
+  }
 }
 
 async function handleNewConversation() {

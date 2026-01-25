@@ -1,13 +1,30 @@
 import { ref } from 'vue'
+import axios from '@/plugins/axios'
 
 /**
  * File attachments composable for handling file uploads
+ * Files are uploaded to the document management system with vector embeddings
  */
 export function useFileAttachments(options = {}) {
   const {
     maxFiles = 5,
-    maxFileSize = 10 * 1024 * 1024, // 10MB default
-    acceptedTypes = ['image/*', 'application/pdf', '.doc', '.docx', '.txt', '.xlsx', '.csv']
+    maxFileSize = 20 * 1024 * 1024, // 20MB default (for Excel files)
+    acceptedTypes = [
+      'image/*',
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+      'application/msword', // DOC
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.ms-excel', // XLS
+      '.doc',
+      '.docx',
+      '.pdf',
+      '.xlsx',
+      '.xls',
+      '.jpg',
+      '.jpeg',
+      '.png'
+    ]
   } = options
 
   const attachments = ref([])
@@ -23,10 +40,35 @@ export function useFileAttachments(options = {}) {
       return false
     }
 
-    // Validate file size
-    if (file.size > maxFileSize) {
-      const sizeMB = (maxFileSize / (1024 * 1024)).toFixed(0)
-      error.value = `File size must be less than ${sizeMB}MB`
+    // Validate file type
+    const allowedMimeTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+      'application/vnd.ms-excel', // XLS
+      'image/jpeg', // JPG
+      'image/png' // PNG
+    ]
+
+    if (!allowedMimeTypes.includes(file.type)) {
+      error.value = 'Only PDF, DOCX, Excel (XLSX/XLS), and Image (JPG/PNG) files are allowed'
+      return false
+    }
+
+    // Validate file size (20 MB for Excel, 5 MB for images, 10 MB for others)
+    const isImage = file.type === 'image/jpeg' || file.type === 'image/png'
+    const isExcel = file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+                    file.type === 'application/vnd.ms-excel'
+
+    if (isImage && file.size > 5 * 1024 * 1024) {
+      error.value = 'Image files must be less than 5 MB'
+      return false
+    } else if (isExcel && file.size > 20 * 1024 * 1024) {
+      error.value = 'Excel files must be less than 20 MB'
+      return false
+    } else if (!isImage && !isExcel && file.size > 10 * 1024 * 1024) {
+      error.value = 'File size must be less than 10 MB'
       return false
     }
 
@@ -38,7 +80,8 @@ export function useFileAttachments(options = {}) {
       size: file.size,
       type: file.type,
       preview: null,
-      uploaded: false
+      uploaded: false,
+      documentId: null // Will be set after upload
     }
 
     // Generate preview for images
@@ -85,7 +128,7 @@ export function useFileAttachments(options = {}) {
     console.log('[FileAttachments] Cleared all attachments')
   }
 
-  // Upload attachments to server
+  // Upload attachments to server (document management system)
   const uploadAttachments = async () => {
     if (attachments.value.length === 0) {
       return []
@@ -96,37 +139,53 @@ export function useFileAttachments(options = {}) {
 
     try {
       for (const attachment of attachments.value) {
-        if (attachment.uploaded) {
+        if (attachment.uploaded && attachment.documentId) {
           uploadedFiles.push(attachment)
           continue
         }
 
-        // TODO: Implement actual upload to your backend
-        // For now, simulating upload
+        console.log(`[FileAttachments] Uploading: ${attachment.name}`)
         uploadProgress.value[attachment.id] = 0
 
-        // Simulate upload progress
-        await new Promise((resolve) => {
-          let progress = 0
-          const interval = setInterval(() => {
-            progress += 10
-            uploadProgress.value[attachment.id] = progress
+        try {
+          // Create form data for multipart/form-data upload
+          const formData = new FormData()
+          formData.append('file', attachment.file)
+          formData.append('documentType', 'chat_attachment') // Mark as chat attachment
+          formData.append('description', `Uploaded via chat on ${new Date().toLocaleString()}`)
+          formData.append('tags', JSON.stringify(['chat', 'attachment']))
 
-            if (progress >= 100) {
-              clearInterval(interval)
-              attachment.uploaded = true
-              uploadedFiles.push(attachment)
-              resolve()
+          // Upload to document management system
+          const response = await axios.post('/api/documents/upload', formData, {
+            headers: {
+              'Content-Type': 'multipart/form-data'
+            },
+            onUploadProgress: (progressEvent) => {
+              const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+              uploadProgress.value[attachment.id] = percentCompleted
             }
-          }, 100)
-        })
+          })
+
+          if (response.data.success) {
+            attachment.uploaded = true
+            attachment.documentId = response.data.document.id
+            uploadedFiles.push(attachment)
+            console.log(`[FileAttachments] Uploaded successfully: ${attachment.name} (ID: ${attachment.documentId})`)
+          } else {
+            throw new Error(response.data.error || 'Upload failed')
+          }
+        } catch (uploadError) {
+          console.error(`[FileAttachments] Failed to upload ${attachment.name}:`, uploadError)
+          error.value = uploadError.response?.data?.error || `Failed to upload ${attachment.name}`
+          throw uploadError
+        }
       }
 
       console.log('[FileAttachments] All files uploaded successfully')
       return uploadedFiles
     } catch (err) {
       console.error('[FileAttachments] Upload failed:', err)
-      error.value = 'Failed to upload files'
+      error.value = err.response?.data?.error || 'Failed to upload files'
       throw err
     } finally {
       uploading.value = false

@@ -1008,15 +1008,15 @@ app.post('/chat', async (req, res) => {
  */
 app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) => {
   try {
-    const { message, conversationId, model } = req.body;
+    const { message, conversationId, model, documentIds } = req.body;
     // NOTE: systemPrompt is NO LONGER accepted from client for security
 
     // Get Quendoo API key from authenticated hotel context (loaded from Secret Manager)
     const quendooApiKey = req.hotel.quendooApiKey;
     const hotelId = req.hotel.hotelId;
 
-    if (!message) {
-      return res.status(400).json({ error: 'message required' });
+    if (!message && (!documentIds || documentIds.length === 0)) {
+      return res.status(400).json({ error: 'message or documentIds required' });
     }
 
     const finalConversationId = conversationId || `conv_${Date.now()}`;
@@ -1083,12 +1083,50 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
       console.warn('[Chat/Quendoo] Failed to load hotel settings, using defaults:', error.message);
     }
 
+    // === Load attached documents if documentIds provided ===
+    let attachedDocumentsText = '';
+    if (documentIds && Array.isArray(documentIds) && documentIds.length > 0) {
+      console.log(`[Chat/Quendoo] Loading ${documentIds.length} attached documents...`);
+      try {
+        const { getDocumentById } = await import('./models/HotelDocument.js');
+
+        const documentTexts = [];
+        for (const docId of documentIds) {
+          const doc = await getDocumentById(hotelId, docId);
+          if (doc) {
+            console.log(`[Chat/Quendoo] Loaded document: ${doc.fileName} (${doc.fileType})`);
+            documentTexts.push(
+              `\n\n--- Document: ${doc.fileName} (${doc.fileType}) ---\n` +
+              (doc.fullText || 'No text content available') +
+              `\n--- End of ${doc.fileName} ---\n\n`
+            );
+          } else {
+            console.warn(`[Chat/Quendoo] Document not found: ${docId}`);
+          }
+        }
+
+        if (documentTexts.length > 0) {
+          attachedDocumentsText = '\n\n# Attached Documents\n\nThe user has attached the following documents for reference:\n' +
+            documentTexts.join('\n') +
+            '\n# User Question\n\n';
+          console.log(`[Chat/Quendoo] Attached ${documentTexts.length} documents to message context`);
+        }
+      } catch (error) {
+        console.error('[Chat/Quendoo] Failed to load attached documents:', error);
+        // Continue without documents - don't fail the request
+      }
+    }
+
     // === SECURITY: Use Immutable Server-Side System Prompt with Hotel Customization ===
     const finalSystemPrompt = getSystemPrompt('quendoo_hotel_v1', hotelSettings);
+
+    // Prepend attached documents to the message if any
+    const finalMessage = attachedDocumentsText + message;
 
     console.log(`[Chat/Quendoo] Processing conversation: ${finalConversationId}`);
     console.log(`[Chat/Quendoo] Using model: ${model || 'default'}`);
     console.log(`[Chat/Quendoo] System prompt: SERVER-CONTROLLED (v1.0 + hotel customization)`);
+    console.log(`[Chat/Quendoo] Attached documents: ${documentIds?.length || 0}`);
 
     // Get or create Quendoo integration for this conversation
     let quendooIntegration = quendooIntegrations.get(finalConversationId);
@@ -1120,9 +1158,9 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
       res.write(`data: ${JSON.stringify({ type: 'connected', conversationId: finalConversationId })}\n\n`);
 
       try {
-        // Process message with streaming callbacks
+        // Process message with streaming callbacks (use finalMessage which includes attached documents)
         const result = await quendooIntegration.processMessageWithStreaming(
-          message,
+          finalMessage,
           finalConversationId,
           model,
           finalSystemPrompt,
@@ -1167,9 +1205,15 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
               conversationId: finalConversationId
             });
           }
-          await conversationService.addMessage(finalConversationId, 'user', message, {
+          // Save original user message with document metadata
+          const userMessageMetadata = {
             model: model || 'claude-sonnet-4-5-20250929'
-          });
+          };
+          if (documentIds && documentIds.length > 0) {
+            userMessageMetadata.documentIds = documentIds;
+          }
+          await conversationService.addMessage(finalConversationId, 'user', message, userMessageMetadata);
+
           await conversationService.addMessage(finalConversationId, 'assistant', result.content, {
             toolsUsed: result.toolsUsed,
             model: model || 'claude-sonnet-4-5-20250929'
@@ -1236,9 +1280,9 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
       // === REGULAR JSON MODE (backwards compatibility) ===
       console.log(`[Chat/Quendoo] Using regular JSON mode`);
 
-      // Process message with Claude integration
+      // Process message with Claude integration (use finalMessage which includes attached documents)
       const result = await quendooIntegration.processMessage(
-        message,
+        finalMessage,
         finalConversationId,
         model,
         finalSystemPrompt,

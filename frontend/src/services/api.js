@@ -127,8 +127,9 @@ export const chatApi = {
    * @param {string} serverId - Optional server ID
    * @param {string} model - Claude model to use
    * @param {Object} callbacks - { onToolStart, onToolProgress, onComplete, onError }
+   * @param {Array<string>} documentIds - Optional document IDs to include in context
    */
-  async sendMessageStreaming(content, conversationId, serverId, model, callbacks = {}) {
+  async sendMessageStreaming(content, conversationId, serverId, model, callbacks = {}, documentIds = []) {
     const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
     const url = `${baseUrl}/chat/quendoo`
 
@@ -139,6 +140,20 @@ export const chatApi = {
     let streamError = null
 
     try {
+      const requestBody = {
+        message: content,
+        conversationId,
+        serverId,
+        model
+        // API key removed - authentication via JWT token in header
+      }
+
+      // Add document IDs if provided
+      if (documentIds && documentIds.length > 0) {
+        requestBody.documentIds = documentIds
+        console.log(`[SSE] Sending message with ${documentIds.length} document(s)`)
+      }
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -146,13 +161,7 @@ export const chatApi = {
           'Accept': 'text/event-stream',  // Request SSE streaming
           'Authorization': `Bearer ${hotelToken}`  // Hotel JWT authentication
         },
-        body: JSON.stringify({
-          message: content,
-          conversationId,
-          serverId,
-          model
-          // API key removed - authentication via JWT token in header
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (!response.ok) {

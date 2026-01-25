@@ -252,8 +252,8 @@ export const useChatStore = defineStore('chat', () => {
     saveToStorage()
   }
 
-  async function sendMessage(content, serverId = null) {
-    if (!content.trim()) return
+  async function sendMessage(content, serverId = null, documentIds = []) {
+    if (!content.trim() && (!documentIds || documentIds.length === 0)) return
 
     try {
       // Create conversation if none exists
@@ -264,11 +264,19 @@ export const useChatStore = defineStore('chat', () => {
       const conversationId = currentConversationId.value
       const conversation = conversations.value.get(conversationId)
 
-      // Add user message
-      addMessage(conversationId, {
+      // Add user message with document attachments
+      const userMessage = {
         role: 'user',
         content: content.trim()
-      })
+      }
+
+      // Add document IDs if any
+      if (documentIds && documentIds.length > 0) {
+        userMessage.documentIds = documentIds
+        console.log(`[Chat Store] Adding message with ${documentIds.length} document(s)`)
+      }
+
+      addMessage(conversationId, userMessage)
 
       // Update conversation title from first message
       if (conversation && conversation.title === 'New Conversation') {
@@ -399,7 +407,8 @@ export const useChatStore = defineStore('chat', () => {
             isStreaming.value = false
             setError(error.message || 'Failed to send message')
           }
-        }
+        },
+        documentIds // Pass document IDs to API
       )
 
     } catch (err) {

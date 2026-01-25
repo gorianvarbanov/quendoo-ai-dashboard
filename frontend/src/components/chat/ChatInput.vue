@@ -238,6 +238,7 @@ const {
   addAttachment,
   removeAttachment,
   clearAttachments,
+  uploadAttachments,
   formatFileSize,
   getFileIcon,
   acceptedTypes
@@ -266,7 +267,8 @@ const openFilePicker = () => {
 }
 
 const canSend = computed(() => {
-  return inputMessage.value.trim().length > 0 && !props.disabled && !props.loading
+  const hasMessage = inputMessage.value.trim().length > 0 || attachments.value.length > 0
+  return hasMessage && !props.disabled && !props.loading && !uploadingFiles.value
 })
 
 async function handleSend() {
@@ -274,13 +276,31 @@ async function handleSend() {
 
   const message = inputMessage.value.trim()
   if (message || attachments.value.length > 0) {
-    // TODO: Upload attachments to server and get URLs
-    // For now, just send the message
-    emit('send', message, attachments.value)
+    try {
+      // Upload attachments first if there are any
+      let uploadedDocuments = []
+      if (attachments.value.length > 0) {
+        console.log('[ChatInput] Uploading attachments before sending message...')
+        uploadedDocuments = await uploadAttachments()
+        console.log('[ChatInput] Attachments uploaded:', uploadedDocuments.map(d => d.documentId))
+      }
 
-    inputMessage.value = ''
-    clearDraft() // Clear draft after sending
-    clearAttachments() // Clear attachments after sending
+      // Send message with document IDs
+      const messageData = {
+        content: message,
+        documentIds: uploadedDocuments.map(doc => doc.documentId).filter(Boolean)
+      }
+
+      emit('send', messageData)
+
+      inputMessage.value = ''
+      clearDraft() // Clear draft after sending
+      clearAttachments() // Clear attachments after sending
+    } catch (err) {
+      console.error('[ChatInput] Failed to send message with attachments:', err)
+      // Keep attachments so user can retry
+      // Error message is already set in uploadAttachments
+    }
   }
 }
 
