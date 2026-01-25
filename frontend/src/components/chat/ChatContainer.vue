@@ -1459,10 +1459,12 @@ watch(settingsDrawer, (isOpen) => {
   font-weight: 400;
   line-height: 1.4;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   flex: 1;
   color: rgb(var(--v-theme-on-surface));
+  word-break: break-word;
 }
 
 .sidebar-footer {
