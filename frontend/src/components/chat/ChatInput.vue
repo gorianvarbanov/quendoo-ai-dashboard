@@ -300,6 +300,7 @@ function handleShiftEnter() {
   max-width: 800px;
   margin: 0 auto;
   position: relative;
+  padding-top: 8px;
 }
 
 .draft-indicator {
@@ -314,6 +315,7 @@ function handleShiftEnter() {
   padding: 2px 8px;
   background: rgba(var(--v-theme-success), 0.1);
   border-radius: 4px;
+  z-index: 1;
 }
 
 .draft-text {
@@ -333,7 +335,7 @@ function handleShiftEnter() {
 /* Voice indicator */
 .voice-indicator {
   position: absolute;
-  top: -32px;
+  top: -40px;
   left: 0;
   right: 0;
   display: flex;
@@ -345,6 +347,7 @@ function handleShiftEnter() {
   background: rgba(var(--v-theme-error), 0.1);
   border-radius: 8px;
   border: 1px solid rgba(var(--v-theme-error), 0.3);
+  z-index: 2;
 }
 
 .voice-pulse {
