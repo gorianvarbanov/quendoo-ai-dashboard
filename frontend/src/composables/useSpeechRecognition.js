@@ -6,7 +6,7 @@ import { ref, computed, onUnmounted } from 'vue'
 export function useSpeechRecognition(options = {}) {
   const {
     lang = 'bg-BG', // Default to Bulgarian
-    continuous = true,
+    continuous = false, // Changed to false to prevent auto-restart
     interimResults = true
   } = options
 
@@ -21,6 +21,7 @@ export function useSpeechRecognition(options = {}) {
   const interimTranscript = ref('')
   const error = ref(null)
   const recognition = ref(null)
+  const shouldContinue = ref(false) // Track if we should auto-restart
 
   // Initialize recognition
   const initRecognition = () => {
@@ -45,16 +46,30 @@ export function useSpeechRecognition(options = {}) {
     }
 
     recognitionInstance.onend = () => {
-      console.log('[SpeechRecognition] Stopped listening')
+      console.log('[SpeechRecognition] Stopped listening, shouldContinue:', shouldContinue.value)
       isListening.value = false
+
+      // Auto-restart if we should continue listening
+      if (shouldContinue.value) {
+        console.log('[SpeechRecognition] Auto-restarting...')
+        setTimeout(() => {
+          if (shouldContinue.value && recognition.value) {
+            try {
+              recognition.value.start()
+            } catch (err) {
+              console.error('[SpeechRecognition] Failed to restart:', err)
+            }
+          }
+        }, 100)
+      }
     }
 
     recognitionInstance.onresult = (event) => {
       let interimText = ''
       let finalText = ''
 
-      // Process ALL results to get the full transcript
-      for (let i = 0; i < event.results.length; i++) {
+      // Process only NEW results (from resultIndex onwards)
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcriptPart = event.results[i][0].transcript
 
         if (event.results[i].isFinal) {
@@ -64,9 +79,14 @@ export function useSpeechRecognition(options = {}) {
         }
       }
 
-      // Set full final transcript (not append)
+      // Append final text to existing transcript
       if (finalText) {
-        transcript.value = finalText.trim()
+        const newText = finalText.trim()
+        if (transcript.value) {
+          transcript.value += ' ' + newText
+        } else {
+          transcript.value = newText
+        }
         console.log('[SpeechRecognition] Final transcript:', transcript.value)
       }
 
@@ -118,10 +138,11 @@ export function useSpeechRecognition(options = {}) {
         recognition.value = initRecognition()
       }
 
-      // Reset transcripts
+      // Reset transcripts only on first start
       transcript.value = ''
       interimTranscript.value = ''
       error.value = null
+      shouldContinue.value = true // Enable auto-restart
 
       recognition.value.start()
     } catch (err) {
@@ -132,6 +153,7 @@ export function useSpeechRecognition(options = {}) {
 
   // Stop listening
   const stop = () => {
+    shouldContinue.value = false // Disable auto-restart
     if (recognition.value && isListening.value) {
       try {
         recognition.value.stop()
