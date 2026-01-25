@@ -796,17 +796,18 @@ export const scrapeBooking = onRequest(
         console.log('[Scraper] Starting room extraction...');
 
         // Try multiple selector strategies for room blocks
+        // CRITICAL FIX: Use only TR elements from room tables, not all data-block-id elements
         let roomBlocks = document.querySelectorAll([
-          "[data-block-id]",
-          ".hprt-table tbody tr",
+          ".hprt-table tbody tr[data-block-id]",  // MOST SPECIFIC - TR with data-block-id in hprt-table
+          ".hprt-table tbody tr",                 // All TR in hprt-table (fallback)
+          "tr[data-block-id]",                    // Any TR with data-block-id
           ".room-table tbody tr",
           "[data-testid='room-table'] tbody tr",
           ".roomstable tbody tr",
           ".ftb-room-row",
-          // NEW: Additional selectors for 2026 Booking.com layout
+          // Additional selectors for 2026 Booking.com layout
           "[data-testid='roomtable-row']",
           "[data-testid='room-row']",
-          "tr[data-block-id]",
           ".js-room-container",
           "[class*='RoomRow']",
           "[class*='room-row']",
