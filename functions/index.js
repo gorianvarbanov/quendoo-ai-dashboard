@@ -1076,6 +1076,27 @@ export const scrapeBooking = onRequest(
       await browser.close();
 
       await updateProgress(90, 'Processing extracted data...');
+
+      // Log key metrics for debugging
+      console.log(`[scrapeBooking] Extraction summary:`, {
+        hotelName: hotelData.hotelName,
+        roomsExtracted: hotelData.rooms?.length || 0,
+        pricesExtracted: hotelData.prices?.length || 0,
+        roomGroups: hotelData.roomGroups?.length || 0,
+        rating: hotelData.rating
+      });
+
+      // Log first room if any
+      if (hotelData.rooms && hotelData.rooms.length > 0) {
+        console.log(`[scrapeBooking] First room sample:`, {
+          name: hotelData.rooms[0].name,
+          price: hotelData.rooms[0].finalPrice,
+          currency: hotelData.rooms[0].currency
+        });
+      } else {
+        console.warn(`[scrapeBooking] WARNING: No rooms extracted! Prices array length: ${hotelData.prices?.length || 0}`);
+      }
+
       console.log("[scrapeBooking] Extracted data:", JSON.stringify(hotelData, null, 2));
 
       await updateProgress(95, 'Validating data quality...');
