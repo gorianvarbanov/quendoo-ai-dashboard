@@ -861,15 +861,22 @@ export const scrapeBooking = onRequest(
             // Extract room name
             let roomName = null;
             const roomNameSelectors = [
+              // PRIORITY 1: Exact Booking.com class from 2026 layout (from debug HTML)
+              ".hprt-roomtype-name",              // NEW! From debug: class="hprt-roomtype-name"
+              ".hprt-roomtype-link",              // Link version
+              ".hprt-roomtype-block",             // Block version
+              // PRIORITY 2: Data attributes
               "[data-testid='room-name']",
-              ".hprt-roomtype-link",
+              "[data-et-mouseenter*='room_name']", // NEW! From debug HTML
+              // PRIORITY 3: Generic selectors
               ".room-name",
               ".roomType",
               "[class*='room'][class*='name']",
-              // NEW: Additional selectors for 2026 layout
+              "[class*='roomtype']",              // NEW! Match any roomtype class
+              // PRIORITY 4: Fallback selectors
               "[data-testid='title']",
               "a[href*='room']",
-              "h3", "h4", // Headers might contain room names
+              "h3", "h4",
               ".bui-card__title",
               "[class*='RoomName']",
               "[class*='room-type']"
