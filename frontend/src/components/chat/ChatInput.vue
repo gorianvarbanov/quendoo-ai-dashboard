@@ -300,12 +300,12 @@ function handleShiftEnter() {
   max-width: 800px;
   margin: 0 auto;
   position: relative;
-  padding-top: 8px;
+  padding-top: 60px;
 }
 
 .draft-indicator {
   position: absolute;
-  top: -24px;
+  top: -52px;
   left: 0;
   display: flex;
   align-items: center;
