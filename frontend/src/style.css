@@ -77,3 +77,35 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+/* Lazy Loading States */
+img[v-lazy-load] {
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+img.lazy-loading {
+  opacity: 0.5;
+  filter: blur(5px);
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+img.lazy-loaded {
+  opacity: 1;
+  filter: blur(0);
+}
+
+img.lazy-error {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}

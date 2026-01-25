@@ -367,6 +367,54 @@ export const scrapeBooking = onRequest(
         });
 
         console.log('[DEBUG] Page structure:', JSON.stringify(pageStructure, null, 2));
+
+        // DEBUG: Test room name extraction with new selectors
+        const roomNameTest = await page.evaluate(() => {
+          const roomBlocks = document.querySelectorAll('.hprt-table tbody tr[data-block-id]');
+          console.log(`[DEBUG-EVAL] Found ${roomBlocks.length} room blocks with TR selector`);
+
+          const testResults = [];
+          roomBlocks.forEach((room, idx) => {
+            if (idx >= 3) return; // Test only first 3 rooms
+
+            const selectors = [
+              ".hprt-roomtype-name",
+              ".hprt-roomtype-link",
+              ".hprt-roomtype-block",
+              "[data-et-mouseenter*='room_name']",
+              ".room-name",
+              "[class*='roomtype']"
+            ];
+
+            const result = {
+              roomIndex: idx,
+              foundWith: null,
+              roomName: null,
+              allClasses: room.className,
+              hasRoomtypeName: !!room.querySelector('.hprt-roomtype-name'),
+              hasRoomtypeLink: !!room.querySelector('.hprt-roomtype-link'),
+              hasRoomtypeBlock: !!room.querySelector('.hprt-roomtype-block')
+            };
+
+            for (const selector of selectors) {
+              const el = room.querySelector(selector);
+              if (el && el.textContent.trim()) {
+                result.foundWith = selector;
+                result.roomName = el.textContent.trim().substring(0, 100);
+                break;
+              }
+            }
+
+            testResults.push(result);
+          });
+
+          return {
+            totalRoomBlocks: roomBlocks.length,
+            testResults: testResults
+          };
+        });
+
+        console.log('[DEBUG] Room name extraction test:', JSON.stringify(roomNameTest, null, 2));
       } catch (debugError) {
         console.error('[DEBUG] Error capturing debug info:', debugError);
       }

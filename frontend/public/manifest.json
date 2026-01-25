@@ -1,0 +1,46 @@
+{
+  "name": "Quendoo AI Assistant",
+  "short_name": "Quendoo AI",
+  "description": "AI-powered hotel management assistant for Quendoo platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1976d2",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/quendoo-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "New Conversation",
+      "short_name": "New Chat",
+      "description": "Start a new conversation with Quendoo AI",
+      "url": "/?action=new",
+      "icons": [
+        {
+          "src": "/quendoo-logo.svg",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "screenshots": []
+}

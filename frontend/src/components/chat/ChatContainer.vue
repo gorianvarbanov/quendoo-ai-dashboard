@@ -77,6 +77,41 @@
         </v-text-field>
       </div>
 
+      <!-- Filter Chips -->
+      <div v-if="!searchQuery" class="sidebar-filters">
+        <v-chip-group
+          v-model="activeFilter"
+          selected-class="text-primary"
+          mandatory
+          class="filter-chips"
+        >
+          <v-chip value="all" size="small" variant="outlined">
+            <v-icon start size="16">mdi-view-list</v-icon>
+            All
+          </v-chip>
+          <v-chip value="favorites" size="small" variant="outlined">
+            <v-icon start size="16">mdi-star</v-icon>
+            Favorites
+          </v-chip>
+          <v-chip
+            v-for="tag in allUsedTags"
+            :key="tag"
+            :value="tag"
+            size="small"
+            variant="outlined"
+          >
+            <v-icon
+              start
+              size="16"
+              :color="predefinedTags.find(t => t.name === tag)?.color"
+            >
+              {{ predefinedTags.find(t => t.name === tag)?.icon || 'mdi-label' }}
+            </v-icon>
+            {{ tag }}
+          </v-chip>
+        </v-chip-group>
+      </div>
+
       <div class="sidebar-content">
         <div class="conversations-list">
           <!-- Search Results -->
@@ -108,11 +143,121 @@
             <div
               v-for="conv in recentConversations"
               :key="conv.id"
-              class="conversation-item"
-              :class="{ active: conv.id === currentConversation?.id }"
-              @click="selectConversation(conv.id)"
+              class="conversation-item-wrapper"
             >
-              <span class="conv-title">{{ conv.title }}</span>
+              <div
+                class="conversation-item"
+                :class="{ active: conv.id === currentConversation?.id }"
+                @click="selectConversation(conv.id)"
+              >
+                <div class="conv-header">
+                  <span class="conv-title">{{ conv.title }}</span>
+                  <v-btn
+                    icon
+                    variant="text"
+                    size="x-small"
+                    @click.stop="toggleFavorite(conv.id)"
+                    class="favorite-btn"
+                  >
+                    <v-icon size="16" :color="isFavorite(conv.id) ? 'warning' : 'grey'">
+                      {{ isFavorite(conv.id) ? 'mdi-star' : 'mdi-star-outline' }}
+                    </v-icon>
+                  </v-btn>
+                </div>
+
+                <!-- Tags -->
+                <div v-if="getTags(conv.id).length > 0" class="conv-tags">
+                  <v-chip
+                    v-for="tag in getTags(conv.id)"
+                    :key="tag"
+                    size="x-small"
+                    :color="predefinedTags.find(t => t.name === tag)?.color"
+                    variant="flat"
+                  >
+                    {{ tag }}
+                  </v-chip>
+                </div>
+              </div>
+
+              <!-- Conversation menu -->
+              <v-menu location="bottom end">
+                <template #activator="{ props }">
+                  <v-btn
+                    icon
+                    variant="text"
+                    size="x-small"
+                    v-bind="props"
+                    class="conversation-menu-btn"
+                    @click.stop
+                  >
+                    <v-icon size="16">mdi-dots-vertical</v-icon>
+                  </v-btn>
+                </template>
+
+                <v-list density="compact">
+                  <!-- Tags submenu -->
+                  <v-menu location="end" open-on-hover>
+                    <template #activator="{ props }">
+                      <v-list-item v-bind="props">
+                        <template #prepend>
+                          <v-icon size="18">mdi-label</v-icon>
+                        </template>
+                        <v-list-item-title>Manage Tags</v-list-item-title>
+                        <template #append>
+                          <v-icon size="18">mdi-chevron-right</v-icon>
+                        </template>
+                      </v-list-item>
+                    </template>
+
+                    <v-list density="compact">
+                      <v-list-item
+                        v-for="tag in predefinedTags"
+                        :key="tag.name"
+                        @click="toggleTag(conv.id, tag.name)"
+                      >
+                        <template #prepend>
+                          <v-icon size="18" :color="tag.color">
+                            {{ getTags(conv.id).includes(tag.name) ? 'mdi-check-circle' : tag.icon }}
+                          </v-icon>
+                        </template>
+                        <v-list-item-title>{{ tag.name }}</v-list-item-title>
+                      </v-list-item>
+                    </v-list>
+                  </v-menu>
+
+                  <v-divider class="my-1" />
+
+                  <v-list-item @click="handleExport(conv, 'markdown')">
+                    <template #prepend>
+                      <v-icon size="18">mdi-language-markdown</v-icon>
+                    </template>
+                    <v-list-item-title>Export as Markdown</v-list-item-title>
+                  </v-list-item>
+
+                  <v-list-item @click="handleExport(conv, 'pdf')">
+                    <template #prepend>
+                      <v-icon size="18">mdi-file-pdf-box</v-icon>
+                    </template>
+                    <v-list-item-title>Export as PDF</v-list-item-title>
+                  </v-list-item>
+
+                  <v-list-item @click="handleExport(conv, 'json')">
+                    <template #prepend>
+                      <v-icon size="18">mdi-code-json</v-icon>
+                    </template>
+                    <v-list-item-title>Export as JSON</v-list-item-title>
+                  </v-list-item>
+
+                  <v-divider class="my-1" />
+
+                  <v-list-item @click="handleDeleteConversation(conv.id)">
+                    <template #prepend>
+                      <v-icon size="18" color="error">mdi-delete</v-icon>
+                    </template>
+                    <v-list-item-title class="text-error">Delete</v-list-item-title>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
             </div>
           </div>
         </div>
@@ -274,6 +419,19 @@
         </div>
       </v-alert>
 
+      <!-- Message Search Bar -->
+      <MessageSearch
+        :is-open="messageSearchOpen"
+        :search-query="messageSearchQuery"
+        :search-results="messageSearchResults"
+        :current-result-index="messageSearchCurrentIndex"
+        :current-result="messageSearchCurrentResult"
+        @update:search-query="messageSearchQuery = $event"
+        @next="messageSearchNext"
+        @previous="messageSearchPrevious"
+        @close="messageSearchOpen = false; messageSearchClear()"
+      />
+
       <!-- Message List -->
       <MessageList
         :messages="currentMessages"
@@ -290,6 +448,7 @@
           <ChatInput
             :disabled="isLoading"
             :loading="isLoading"
+            :conversation-id="currentConversation?.id"
             @send="handleSendMessage"
           />
         </div>
@@ -504,6 +663,13 @@
 
             <v-list-item>
               <template #prepend>
+                <v-chip size="small" class="mr-2">Ctrl+F</v-chip>
+              </template>
+              <v-list-item-title>Search in conversation</v-list-item-title>
+            </v-list-item>
+
+            <v-list-item>
+              <template #prepend>
                 <v-chip size="small" class="mr-2">Ctrl+/</v-chip>
               </template>
               <v-list-item-title>Show this help</v-list-item-title>
@@ -532,10 +698,13 @@ import { chatApi } from '@/services/api'
 import axios from 'axios'
 import { t } from '@/i18n/translations'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
+import { useMessageSearch } from '@/composables/useMessageSearch'
+import { useConversationTags } from '@/composables/useConversationTags'
 import { exportToMarkdown, exportToPDF, exportToJSON } from '@/services/exportService'
 import MessageList from './MessageList.vue'
 import ChatInput from './ChatInput.vue'
 import AvailabilityPanel from './AvailabilityPanel.vue'
+import MessageSearch from './MessageSearch.vue'
 
 const router = useRouter()
 const theme = useTheme()
@@ -554,6 +723,31 @@ const shortcutsHelpDialog = ref(false)
 
 // Search input ref for keyboard shortcut focus
 const searchInputRef = ref(null)
+
+// Message search state
+const messageSearchOpen = ref(false)
+
+// Message search composable
+const {
+  searchQuery: messageSearchQuery,
+  searchResults: messageSearchResults,
+  currentResultIndex: messageSearchCurrentIndex,
+  currentResult: messageSearchCurrentResult,
+  nextResult: messageSearchNext,
+  previousResult: messageSearchPrevious,
+  clearSearch: messageSearchClear
+} = useMessageSearch(computed(() => currentMessages.value))
+
+// Tags and favorites composable
+const {
+  predefinedTags,
+  allUsedTags,
+  addTag,
+  removeTag,
+  getTags,
+  toggleFavorite,
+  isFavorite
+} = useConversationTags()
 
 // Hotel registration state
 const hotelToken = ref(localStorage.getItem('hotelToken'))
@@ -675,6 +869,11 @@ const searchResults = ref([])
 const searching = ref(false)
 let searchTimeout = null
 
+// Tags and favorites filter state
+const activeFilter = ref('all') // 'all', 'favorites', or tag name
+const tagMenuOpen = ref(false)
+const managingTagsFor = ref(null) // conversation ID for tag management dialog
+
 // Model mapping - display names to API model IDs
 const modelMap = {
   'Claude 4 Sonnet': 'claude-sonnet-4-20250514',
@@ -745,12 +944,25 @@ const hasErrorActions = computed(() => {
 })
 
 const recentConversations = computed(() => {
-  return Array.from(chatStore.conversations.values())
+  let conversations = Array.from(chatStore.conversations.values())
     .filter(conv => {
       // Show only conversations with messages or with a custom title
       return (conv.messageCount && conv.messageCount > 0) ||
              (conv.title && conv.title !== 'New Conversation')
     })
+
+  // Apply filter
+  if (activeFilter.value === 'favorites') {
+    conversations = conversations.filter(conv => isFavorite(conv.id))
+  } else if (activeFilter.value !== 'all') {
+    // Filter by tag
+    conversations = conversations.filter(conv => {
+      const tags = getTags(conv.id)
+      return tags.includes(activeFilter.value)
+    })
+  }
+
+  return conversations
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 20)
 })
@@ -796,6 +1008,17 @@ useKeyboardShortcuts({
   'ctrl+/': (e) => {
     console.log('[Keyboard] Show shortcuts help')
     shortcutsHelpDialog.value = true
+  },
+
+  // Ctrl+F - Search in conversation
+  'ctrl+f': (e) => {
+    console.log('[Keyboard] Search in conversation')
+    if (currentMessages.value.length > 0) {
+      messageSearchOpen.value = !messageSearchOpen.value
+      if (!messageSearchOpen.value) {
+        messageSearchClear()
+      }
+    }
   }
 })
 
@@ -875,6 +1098,36 @@ async function handleExport(conversation, format) {
   } catch (err) {
     console.error('[ChatContainer] Export failed:', err)
     error.value = `Failed to export conversation: ${err.message}`
+  }
+}
+
+// Toggle tag on conversation
+function toggleTag(conversationId, tagName) {
+  const tags = getTags(conversationId)
+  if (tags.includes(tagName)) {
+    removeTag(conversationId, tagName)
+    console.log(`[ChatContainer] Removed tag '${tagName}' from conversation ${conversationId}`)
+  } else {
+    addTag(conversationId, tagName)
+    console.log(`[ChatContainer] Added tag '${tagName}' to conversation ${conversationId}`)
+  }
+}
+
+// Delete conversation handler
+async function handleDeleteConversation(conversationId) {
+  if (confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
+    try {
+      await chatStore.deleteConversation(conversationId)
+      console.log(`[ChatContainer] Deleted conversation ${conversationId}`)
+
+      // If we deleted the current conversation, create a new one
+      if (currentConversation.value?.id === conversationId) {
+        await handleNewConversation()
+      }
+    } catch (err) {
+      console.error('[ChatContainer] Failed to delete conversation:', err)
+      chatStore.error = `Failed to delete conversation: ${err.message}`
+    }
   }
 }
 
@@ -1408,5 +1661,89 @@ watch(settingsDrawer, (isOpen) => {
   align-items: flex-start;
   gap: 8px;
   line-height: 1.4;
+}
+
+/* Tags and Favorites Styles */
+.sidebar-filters {
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+}
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.conversation-item-wrapper {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.conversation-item-wrapper:hover .conversation-menu-btn {
+  opacity: 1;
+}
+
+.conversation-item {
+  flex: 1;
+  padding: 10px 12px;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.2s;
+  min-width: 0;
+}
+
+.conversation-item:hover {
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.conversation-item.active {
+  background: rgba(var(--v-theme-primary), 0.12);
+}
+
+.conv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.conv-title {
+  flex: 1;
+  font-size: 0.875rem;
+  color: rgb(var(--v-theme-on-surface));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.favorite-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+}
+
+.conversation-item-wrapper:hover .favorite-btn,
+.favorite-btn.active {
+  opacity: 1;
+}
+
+.conv-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.conversation-menu-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 10px;
 }
 </style>

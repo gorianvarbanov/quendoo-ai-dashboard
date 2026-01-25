@@ -9,20 +9,28 @@
     </div>
 
     <div v-else class="messages-container">
-      <ChatMessage
-        v-for="message in messages"
-        :key="message.id"
-        :message="message"
-        :is-streaming="message.isStreaming || false"
-        @typing="scrollToBottom"
-        @open-availability="$emit('open-availability', $event)"
-      />
+      <!-- Skeleton loaders while loading initial conversation -->
+      <template v-if="isLoading && messages.length === 0">
+        <SkeletonLoader type="message" v-for="i in 3" :key="`skeleton-${i}`" />
+      </template>
 
-      <!-- AI is thinking indicator (shown before first tool starts) -->
-      <div v-if="isLoading && !hasAnyMessages" class="loading-container">
-        <QuendooLoadingIcon />
-        <span class="loading-text">AI is thinking...</span>
-      </div>
+      <!-- Actual messages -->
+      <template v-else>
+        <ChatMessage
+          v-for="message in messages"
+          :key="message.id"
+          :message="message"
+          :is-streaming="message.isStreaming || false"
+          @typing="scrollToBottom"
+          @open-availability="$emit('open-availability', $event)"
+        />
+
+        <!-- AI is thinking indicator (shown before first tool starts) -->
+        <div v-if="isLoading && !hasAnyMessages" class="loading-container">
+          <QuendooLoadingIcon />
+          <span class="loading-text">AI is thinking...</span>
+        </div>
+      </template>
     </div>
   </v-sheet>
 </template>
@@ -31,6 +39,7 @@
 import { ref, watch, nextTick, computed } from 'vue'
 import ChatMessage from './ChatMessage.vue'
 import QuendooLoadingIcon from '@/components/common/QuendooLoadingIcon.vue'
+import SkeletonLoader from '@/components/common/SkeletonLoader.vue'
 
 const props = defineProps({
   messages: {
