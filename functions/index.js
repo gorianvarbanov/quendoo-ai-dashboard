@@ -324,6 +324,53 @@ export const scrapeBooking = onRequest(
 
       await updateProgress(70, 'Extracting hotel data...');
 
+      // DEBUG: Take screenshot and log HTML structure
+      try {
+        const screenshot = await page.screenshot({ encoding: 'base64', fullPage: false });
+        console.log('[DEBUG] Screenshot captured, size:', screenshot.length, 'bytes');
+
+        // Log page structure
+        const pageStructure = await page.evaluate(() => {
+          return {
+            url: window.location.href,
+            title: document.title,
+            bodyClasses: document.body.className,
+
+            // Check for room tables
+            tables: Array.from(document.querySelectorAll('table')).map((table, idx) => ({
+              index: idx,
+              classes: table.className,
+              dataAttributes: Array.from(table.attributes)
+                .filter(attr => attr.name.startsWith('data-'))
+                .map(attr => `${attr.name}="${attr.value}"`),
+              rowCount: table.querySelectorAll('tr').length,
+              hasPrice: /[\d\s,.]+\s*(€|лв|\$|USD|EUR|BGN)/i.test(table.textContent)
+            })),
+
+            // Check for room blocks with various selectors
+            roomBlockSelectors: [
+              "[data-block-id]",
+              ".hprt-table tbody tr",
+              "[data-testid='roomtable-row']",
+              "[data-testid='room-row']",
+              "[class*='RoomRow']"
+            ].map(selector => ({
+              selector: selector,
+              count: document.querySelectorAll(selector).length,
+              firstElementClasses: document.querySelector(selector)?.className || null,
+              firstElementHtml: document.querySelector(selector)?.outerHTML.substring(0, 500) || null
+            })),
+
+            // Sample text content (first 1000 chars)
+            bodyTextSample: document.body.textContent.substring(0, 1000).replace(/\s+/g, ' ')
+          };
+        });
+
+        console.log('[DEBUG] Page structure:', JSON.stringify(pageStructure, null, 2));
+      } catch (debugError) {
+        console.error('[DEBUG] Error capturing debug info:', debugError);
+      }
+
       // Extract hotel data with improved accuracy logic
       const hotelData = await page.evaluate(() => {
         // ===== HELPER FUNCTIONS =====
