@@ -1,39 +1,38 @@
 <template>
   <div class="chat-input-container">
-    <!-- Draft indicator -->
-    <transition name="fade">
-      <div v-if="hasDraft && draftSavedAt" class="draft-indicator">
-        <v-icon size="12" class="mr-1">mdi-content-save</v-icon>
-        <span class="draft-text">Draft saved</span>
-      </div>
-    </transition>
-
-    <!-- Voice recording indicator -->
-    <transition name="fade">
-      <div v-if="isListening" class="voice-indicator">
-        <div class="voice-pulse"></div>
-        <v-icon size="16" class="mr-2" color="error">mdi-microphone</v-icon>
-        <span class="voice-text">Listening...</span>
-        <span v-if="interimTranscript" class="interim-text">{{ interimTranscript }}</span>
-      </div>
-    </transition>
-
-    <!-- Voice error alert -->
-    <transition name="fade">
-      <v-alert
-        v-if="voiceError"
-        type="error"
-        variant="tonal"
-        density="compact"
-        closable
-        class="voice-error"
-        @click:close="voiceError = null"
-      >
-        {{ voiceError }}
-      </v-alert>
-    </transition>
-
     <div class="input-wrapper">
+      <!-- Voice error alert -->
+      <transition name="fade">
+        <v-alert
+          v-if="voiceError"
+          type="error"
+          variant="tonal"
+          density="compact"
+          closable
+          class="voice-error"
+          @click:close="voiceError = null"
+        >
+          {{ voiceError }}
+        </v-alert>
+      </transition>
+
+      <!-- Draft indicator -->
+      <transition name="fade">
+        <div v-if="hasDraft && draftSavedAt && !isListening" class="draft-indicator">
+          <v-icon size="12" class="mr-1">mdi-content-save</v-icon>
+          <span class="draft-text">Draft saved</span>
+        </div>
+      </transition>
+
+      <!-- Voice recording indicator -->
+      <transition name="fade">
+        <div v-if="isListening" class="voice-indicator">
+          <div class="voice-pulse"></div>
+          <v-icon size="16" class="mr-2" color="error">mdi-microphone</v-icon>
+          <span class="voice-text">Listening...</span>
+          <span v-if="interimTranscript" class="interim-text">{{ interimTranscript }}</span>
+        </div>
+      </transition>
       <!-- File attachments preview -->
       <transition-group name="fade-list" tag="div" class="attachments-preview" v-if="attachments.length > 0">
         <div
@@ -300,22 +299,17 @@ function handleShiftEnter() {
   max-width: 800px;
   margin: 0 auto;
   position: relative;
-  padding-top: 60px;
 }
 
 .draft-indicator {
-  position: absolute;
-  top: -52px;
-  left: 0;
   display: flex;
   align-items: center;
   gap: 4px;
   font-size: 0.7rem;
   color: rgba(var(--v-theme-on-surface), 0.5);
-  padding: 2px 8px;
-  background: rgba(var(--v-theme-success), 0.1);
-  border-radius: 4px;
-  z-index: 1;
+  padding: 6px 12px;
+  background: rgba(var(--v-theme-success), 0.08);
+  border-radius: 8px 8px 0 0;
 }
 
 .draft-text {
@@ -324,30 +318,25 @@ function handleShiftEnter() {
 
 .fade-enter-active,
 .fade-leave-active {
-  transition: opacity 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+  transform: translateY(-8px);
 }
 
 /* Voice indicator */
 .voice-indicator {
-  position: absolute;
-  top: -40px;
-  left: 0;
-  right: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 0.875rem;
   color: rgb(var(--v-theme-error));
-  padding: 8px 16px;
-  background: rgba(var(--v-theme-error), 0.1);
-  border-radius: 8px;
-  border: 1px solid rgba(var(--v-theme-error), 0.3);
-  z-index: 2;
+  padding: 10px 16px;
+  background: rgba(var(--v-theme-error), 0.08);
+  border-radius: 8px 8px 0 0;
 }
 
 .voice-pulse {
@@ -383,7 +372,8 @@ function handleShiftEnter() {
 }
 
 .voice-error {
-  margin-bottom: 8px;
+  margin: 12px 12px 0 12px;
+  border-radius: 8px;
 }
 
 /* Microphone pulse animation */
@@ -476,13 +466,14 @@ function handleShiftEnter() {
 
 .input-wrapper {
   background: rgb(var(--v-theme-surface));
-  border-radius: 16px;
-  box-shadow: 0 0 0 1px rgba(var(--v-theme-on-surface), 0.12);
-  transition: none !important;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.2s ease;
+  overflow: hidden;
 }
 
 .input-wrapper:focus-within {
-  box-shadow: 0 0 0 2px rgb(var(--v-theme-primary));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12), 0 0 0 2px rgb(var(--v-theme-primary));
 }
 
 .input-wrapper * {
@@ -499,14 +490,23 @@ function handleShiftEnter() {
 }
 
 .message-input :deep(.v-field) {
-  border-radius: 16px;
+  border-radius: 0;
   box-shadow: none;
   padding: 12px 16px;
   transition: none !important;
+  background: transparent;
 }
 
 .message-input :deep(.v-field__outline) {
   display: none;
+}
+
+.message-input :deep(.v-field__prepend-inner) {
+  padding-top: 12px;
+}
+
+.message-input :deep(.v-field__append-inner) {
+  padding-top: 12px;
 }
 
 .message-input :deep(.v-field__input) {
