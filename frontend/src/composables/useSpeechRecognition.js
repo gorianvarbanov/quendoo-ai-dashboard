@@ -53,7 +53,8 @@ export function useSpeechRecognition(options = {}) {
       let interimText = ''
       let finalText = ''
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      // Process ALL results to get the full transcript
+      for (let i = 0; i < event.results.length; i++) {
         const transcriptPart = event.results[i][0].transcript
 
         if (event.results[i].isFinal) {
@@ -63,10 +64,10 @@ export function useSpeechRecognition(options = {}) {
         }
       }
 
-      // Update transcripts
+      // Set full final transcript (not append)
       if (finalText) {
-        transcript.value += finalText
-        console.log('[SpeechRecognition] Final transcript:', finalText)
+        transcript.value = finalText.trim()
+        console.log('[SpeechRecognition] Final transcript:', transcript.value)
       }
 
       interimTranscript.value = interimText
