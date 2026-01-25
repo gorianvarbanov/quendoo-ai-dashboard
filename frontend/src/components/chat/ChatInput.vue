@@ -101,7 +101,7 @@
             ref="fileInputRef"
             type="file"
             multiple
-            :accept="acceptedTypes.join(',')"
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,image/jpeg,image/png"
             @change="handleFileSelect"
             style="display: none;"
           />
@@ -249,9 +249,16 @@ const fileInputRef = ref(null)
 
 // Handle file selection
 const handleFileSelect = async (event) => {
+  console.log('[ChatInput] File input changed, files:', event.target.files)
   const files = Array.from(event.target.files || [])
 
+  if (files.length === 0) {
+    console.log('[ChatInput] No files selected')
+    return
+  }
+
   for (const file of files) {
+    console.log('[ChatInput] Adding file:', file.name, file.type)
     await addAttachment(file)
   }
 
@@ -263,7 +270,12 @@ const handleFileSelect = async (event) => {
 
 // Open file picker
 const openFilePicker = () => {
-  fileInputRef.value?.click()
+  console.log('[ChatInput] Opening file picker, ref:', fileInputRef.value)
+  if (fileInputRef.value) {
+    fileInputRef.value.click()
+  } else {
+    console.error('[ChatInput] File input ref not found')
+  }
 }
 
 const canSend = computed(() => {
