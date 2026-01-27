@@ -163,6 +163,7 @@ export function useFileAttachments(options = {}) {
           // Note: Don't set Content-Type manually - axios will set it automatically
           // with the correct boundary for multipart/form-data
           const response = await axios.post('/api/documents/upload', formData, {
+            timeout: 120000, // 2 minutes timeout for file upload + embeddings generation
             onUploadProgress: (progressEvent) => {
               const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
               uploadProgress.value[attachment.id] = percentCompleted
