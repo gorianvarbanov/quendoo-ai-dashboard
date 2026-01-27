@@ -286,10 +286,15 @@ const handleFileSelect = async (event) => {
     return
   }
 
+  console.log('[ChatInput] Processing', files.length, 'file(s)')
+
   for (const file of files) {
-    console.log('[ChatInput] Adding file:', file.name, file.type)
-    await addAttachment(file)
+    console.log('[ChatInput] Adding file:', file.name, file.type, 'size:', file.size)
+    const added = await addAttachment(file)
+    console.log('[ChatInput] File added result:', added)
   }
+
+  console.log('[ChatInput] All files added. Current attachments:', attachments.value.length)
 
   // Clear input to allow selecting same file again
   if (fileInputRef.value) {
@@ -297,10 +302,12 @@ const handleFileSelect = async (event) => {
   }
 
   // Automatically start upload after file is added
-  console.log('[ChatInput] Auto-starting upload for selected files...')
+  console.log('[ChatInput] Auto-starting upload for', attachments.value.length, 'attachment(s)...')
+  console.log('[ChatInput] Attachments before upload:', attachments.value.map(a => ({ name: a.name, uploaded: a.uploaded })))
+
   try {
     const uploadedDocuments = await uploadAttachments()
-    console.log('[ChatInput] Auto-upload complete:', uploadedDocuments.map(d => d.documentId))
+    console.log('[ChatInput] Auto-upload complete. Uploaded', uploadedDocuments.length, 'document(s):', uploadedDocuments.map(d => d.documentId))
 
     // Show success notification
     const fileCount = uploadedDocuments.length
@@ -310,6 +317,7 @@ const handleFileSelect = async (event) => {
     uploadSuccessSnackbar.value = true
   } catch (err) {
     console.error('[ChatInput] Auto-upload failed:', err)
+    console.error('[ChatInput] Error details:', err.message, err.response?.data)
     // Error is already set in uploadAttachments composable
   }
 }

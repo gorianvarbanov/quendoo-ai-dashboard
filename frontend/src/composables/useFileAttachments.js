@@ -127,21 +127,28 @@ export function useFileAttachments(options = {}) {
 
   // Upload attachments to server (document management system)
   const uploadAttachments = async () => {
+    console.log('[FileAttachments] uploadAttachments called. Attachments:', attachments.value.length)
+
     if (attachments.value.length === 0) {
+      console.log('[FileAttachments] No attachments to upload')
       return []
     }
 
+    console.log('[FileAttachments] Starting upload process. Setting uploading=true')
     uploading.value = true
     const uploadedFiles = []
 
     try {
       for (const attachment of attachments.value) {
+        console.log(`[FileAttachments] Processing attachment: ${attachment.name}, uploaded: ${attachment.uploaded}`)
+
         if (attachment.uploaded && attachment.documentId) {
+          console.log(`[FileAttachments] ${attachment.name} already uploaded, skipping`)
           uploadedFiles.push(attachment)
           continue
         }
 
-        console.log(`[FileAttachments] Uploading: ${attachment.name}`)
+        console.log(`[FileAttachments] Uploading: ${attachment.name} (${attachment.file.type}, ${attachment.size} bytes)`)
         uploadProgress.value[attachment.id] = 0
 
         try {
