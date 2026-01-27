@@ -3,10 +3,67 @@
  * Allows Claude to semantically search hotel documents using RAG
  */
 
-import { searchDocumentsByVector, listDocumentsByHotel } from '../models/HotelDocument.js';
-import { generateEmbedding } from '../services/embeddingService.js';
+import { searchDocumentsByVector, listDocumentsByHotel, getDocumentById } from '../models/HotelDocument.js';
+import { generateEmbedding, calculateCosineSimilarity } from '../services/embeddingService.js';
 import { expandQuery, calculateBoost, extractKeyPhrases } from '../services/queryExpansionService.js';
 import { performHybridSearch, extractKeywords } from '../services/hybridSearchService.js';
+import { getHotelCollection } from '../config/firestore.js';
+
+/**
+ * Search specific documents by their IDs (for attached documents)
+ * @param {string} hotelId - Hotel ID
+ * @param {string[]} documentIds - Array of document IDs to search
+ * @param {number[]} queryEmbedding - Query embedding vector
+ * @param {number} topK - Number of top results to return
+ * @returns {Promise<Array>} - Array of search results with similarity scores
+ */
+async function searchSpecificDocuments(hotelId, documentIds, queryEmbedding, topK) {
+  const allResults = [];
+
+  for (const docId of documentIds) {
+    try {
+      // Load document metadata (no full text)
+      const doc = await getDocumentById(hotelId, docId, false);
+      if (!doc) {
+        console.warn(`[SearchTool] Document not found: ${docId}`);
+        continue;
+      }
+
+      // Read chunks subcollection
+      const docRef = getHotelCollection(hotelId).doc(docId);
+      const chunksSnapshot = await docRef.collection('chunks').get();
+
+      chunksSnapshot.forEach(chunkDoc => {
+        const chunkData = chunkDoc.data();
+
+        // Calculate cosine similarity between query and chunk embeddings
+        const similarity = calculateCosineSimilarity(queryEmbedding, chunkData.embedding);
+
+        allResults.push({
+          documentId: docId,
+          fileName: doc.fileName,
+          documentType: doc.documentType || doc.fileType,
+          chunkIndex: chunkData.chunkIndex,
+          textChunk: chunkData.text,
+          similarity,
+          originalSemanticScore: similarity,
+          fileType: doc.fileType
+        });
+      });
+
+      console.log(`[SearchTool] Searched document ${doc.fileName}: ${chunksSnapshot.size} chunks`);
+    } catch (error) {
+      console.error(`[SearchTool] Error searching document ${docId}:`, error);
+      // Continue with other documents
+    }
+  }
+
+  // Sort by similarity (highest first) and return top K
+  allResults.sort((a, b) => b.similarity - a.similarity);
+  console.log(`[SearchTool] Found ${allResults.length} total chunks, returning top ${topK}`);
+
+  return allResults.slice(0, topK);
+}
 
 /**
  * Search hotel documents using semantic search
@@ -19,13 +76,14 @@ import { performHybridSearch, extractKeywords } from '../services/hybridSearchSe
  * @param {string} hotelId - Hotel ID from JWT token
  * @returns {Promise<object>} - Search results with relevant document excerpts
  */
-export async function searchHotelDocuments(params, hotelId) {
+export async function searchHotelDocuments(params, hotelId, attachedDocumentIds = []) {
   try {
     console.log('[DocumentTools] Searching documents:', {
       hotelId,
       query: params.query,
       documentTypes: params.documentTypes,
-      topK: params.topK
+      topK: params.topK,
+      attachedDocumentIds: attachedDocumentIds?.length || 0
     });
 
     // Validate parameters
@@ -72,11 +130,20 @@ export async function searchHotelDocuments(params, hotelId) {
     const queryEmbedding = await generateEmbedding(queryText);
 
     // Step 4: Perform semantic (vector) search
+    // If attachedDocumentIds provided, search only those documents
     console.log('[DocumentTools] Performing semantic search...');
-    let results = await searchDocumentsByVector(hotelId, queryEmbedding, {
-      limit: topK * 3, // Get more results for hybrid reranking
-      documentTypes: params.documentTypes || []
-    });
+    let results;
+
+    if (attachedDocumentIds && attachedDocumentIds.length > 0) {
+      console.log(`[DocumentTools] Searching ${attachedDocumentIds.length} attached documents only`);
+      results = await searchSpecificDocuments(hotelId, attachedDocumentIds, queryEmbedding, topK * 3);
+    } else {
+      console.log('[DocumentTools] Searching all hotel documents');
+      results = await searchDocumentsByVector(hotelId, queryEmbedding, {
+        limit: topK * 3, // Get more results for hybrid reranking
+        documentTypes: params.documentTypes || []
+      });
+    }
 
     // Step 5: Hybrid reranking (combine semantic + keyword scores)
     console.log('[DocumentTools] Applying hybrid reranking...');

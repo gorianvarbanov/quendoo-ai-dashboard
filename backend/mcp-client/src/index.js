@@ -1084,24 +1084,51 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
     }
 
     // === Load attached documents if documentIds provided ===
+    // Size-based routing: Small files get full text, large files prompt tool usage
     let attachedDocumentsText = '';
     if (documentIds && Array.isArray(documentIds) && documentIds.length > 0) {
       console.log(`[Chat/Quendoo] Loading ${documentIds.length} attached documents...`);
       try {
         const { getDocumentById } = await import('./models/HotelDocument.js');
 
+        // Threshold: 10K chars = ~3K tokens
+        const FULL_TEXT_THRESHOLD = 10000;
         const documentTexts = [];
+
         for (const docId of documentIds) {
-          const doc = await getDocumentById(hotelId, docId);
-          if (doc) {
-            console.log(`[Chat/Quendoo] Loaded document: ${doc.fileName} (${doc.fileType})`);
+          // Load metadata only first (fast, no full text)
+          const doc = await getDocumentById(hotelId, docId, false);
+
+          if (!doc) {
+            console.warn(`[Chat/Quendoo] Document not found: ${docId}`);
+            continue;
+          }
+
+          // Calculate document size based on chunks
+          const estimatedSize = (doc.chunksCount || 0) * 1500; // chars per chunk
+
+          if (estimatedSize <= FULL_TEXT_THRESHOLD) {
+            // Small file: Include full text
+            console.log(`[Chat/Quendoo] Document "${doc.fileName}" is small (${estimatedSize} chars), including full text`);
+            const fullDoc = await getDocumentById(hotelId, docId, true);
             documentTexts.push(
-              `\n\n--- Document: ${doc.fileName} (${doc.fileType}) ---\n` +
-              (doc.fullText || 'No text content available') +
+              `\n\n--- Document: ${doc.fileName} (${doc.fileType}) [Complete] ---\n` +
+              (fullDoc.fullText || 'No text content available') +
               `\n--- End of ${doc.fileName} ---\n\n`
             );
           } else {
-            console.warn(`[Chat/Quendoo] Document not found: ${docId}`);
+            // Large file: Add reference + force tool use
+            console.log(`[Chat/Quendoo] Document "${doc.fileName}" is large (${estimatedSize} chars, ${doc.chunksCount} chunks), prompting tool use`);
+            documentTexts.push(
+              `\n\n--- Document: ${doc.fileName} (${doc.fileType}) [Large Document] ---\n` +
+              `File Type: ${doc.fileType}\n` +
+              `Size: ${doc.chunksCount} text chunks (estimated ${Math.round(estimatedSize / 1000)}K characters)\n` +
+              `Document ID: ${docId}\n` +
+              `Preview:\n${doc.textPreview || 'No preview available'}\n\n` +
+              `**IMPORTANT**: This file is too large to include in full. ` +
+              `Use the search_hotel_documents tool with query parameter to find specific information from this document.\n` +
+              `--- End of ${doc.fileName} ---\n\n`
+            );
           }
         }
 
@@ -1193,7 +1220,8 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
             onThinking: () => {
               res.write(`data: ${JSON.stringify({ type: 'thinking' })}\n\n`);
             }
-          }
+          },
+          documentIds || [] // Attached document IDs for search tool filtering
         );
 
         // === DATABASE: Persist messages to Firestore ===
@@ -1287,7 +1315,9 @@ app.post('/chat/quendoo', requireHotelAuth, checkHotelLimits, async (req, res) =
         model,
         finalSystemPrompt,
         quendooApiKey,  // User-provided Quendoo API key
-        hotelId         // Hotel ID for local tool execution (document search)
+        hotelId,        // Hotel ID for local tool execution (document search)
+        null,           // onToolProgress callback (not used in JSON mode)
+        documentIds || [] // Attached document IDs for search tool filtering
       );
 
       // === SECURITY: Log successful request ===

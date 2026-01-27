@@ -191,10 +191,11 @@ export class QuendooClaudeIntegration {
    * Process a chat message with Claude using remote MCP server
    * @param {Function} onToolProgress - Optional callback for tool execution progress
    */
-  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null, hotelId = null, onToolProgress = null) {
-    // Store the Quendoo API key and hotel ID for this request
+  async processMessage(message, conversationId, model = 'claude-3-5-haiku-20241022', systemPrompt = null, quendooApiKey = null, hotelId = null, onToolProgress = null, attachedDocumentIds = []) {
+    // Store the Quendoo API key, hotel ID, and attached document IDs for this request
     this.currentQuendooApiKey = quendooApiKey;
     this.currentHotelId = hotelId;
+    this.currentAttachedDocumentIds = attachedDocumentIds || [];
 
     // Connect to MCP server if not already connected
     await this.connectToMCPServer();
@@ -355,9 +356,15 @@ export class QuendooClaudeIntegration {
         const startTime = Date.now();
 
         try {
-          // Add hotelId to document tool arguments
+          // Add hotelId and attachedDocumentIds to document tool arguments
           if (block.name === 'search_hotel_documents' || block.name === 'list_hotel_documents') {
             block.input.hotelId = this.currentHotelId;
+
+            // For search_hotel_documents, pass attached document IDs to search only those
+            if (block.name === 'search_hotel_documents' && this.currentAttachedDocumentIds && this.currentAttachedDocumentIds.length > 0) {
+              block.input.attachedDocumentIds = this.currentAttachedDocumentIds;
+              console.log(`[Quendoo] Passing ${this.currentAttachedDocumentIds.length} attached document IDs to search tool`);
+            }
           }
 
           // Execute all tools through MCP server
@@ -653,10 +660,11 @@ export class QuendooClaudeIntegration {
    * Process message with real-time streaming callbacks for tool execution
    * @param {Object} callbacks - { onToolStart, onToolComplete, onThinking }
    */
-  async processMessageWithStreaming(message, conversationId, model, systemPrompt, quendooApiKey, hotelId, callbacks = {}) {
-    // Store the Quendoo API key and hotel ID for this request
+  async processMessageWithStreaming(message, conversationId, model, systemPrompt, quendooApiKey, hotelId, callbacks = {}, attachedDocumentIds = []) {
+    // Store the Quendoo API key, hotel ID, and attached document IDs for this request
     this.currentQuendooApiKey = quendooApiKey;
     this.currentHotelId = hotelId;
+    this.currentAttachedDocumentIds = attachedDocumentIds || [];
 
     // Connect to MCP server if not already connected
     await this.connectToMCPServer();
@@ -810,9 +818,15 @@ export class QuendooClaudeIntegration {
               const startTime = Date.now();
 
               try {
-                // Add hotelId to document tool arguments
+                // Add hotelId and attachedDocumentIds to document tool arguments
                 if (block.name === 'search_hotel_documents' || block.name === 'list_hotel_documents' || block.name === 'query_excel_data') {
                   block.input.hotelId = this.currentHotelId;
+
+                  // For search_hotel_documents, pass attached document IDs to search only those
+                  if (block.name === 'search_hotel_documents' && this.currentAttachedDocumentIds && this.currentAttachedDocumentIds.length > 0) {
+                    block.input.attachedDocumentIds = this.currentAttachedDocumentIds;
+                    console.log(`[Quendoo Streaming] Passing ${this.currentAttachedDocumentIds.length} attached document IDs to search tool`);
+                  }
                 }
 
                 // Execute all tools through MCP server
