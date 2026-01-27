@@ -74,9 +74,12 @@ export async function createDocument(hotelId, documentData) {
       storageUrl: documentData.storageUrl,
       storagePath: documentData.storagePath,
 
-      // Content (full text for reference)
-      fullText: documentData.fullText || '',
+      // Content metadata (full text stored in chunks subcollection)
+      // NOTE: We don't store fullText in main document to avoid 1MB Firestore limit
+      // Large documents (Excel files with lots of data) would exceed this limit
+      // Full text can be reconstructed from chunks subcollection if needed
       chunksCount: documentData.embeddings?.length || 0,
+      textPreview: documentData.fullText ? documentData.fullText.slice(0, 500) : '', // First 500 chars for preview
 
       // Structured data (extracted by AI)
       structuredData: documentData.structuredData || {},
@@ -198,9 +201,10 @@ export async function getDocuments(hotelId, filters = {}) {
  * Get a single document by ID
  * @param {string} hotelId - Hotel ID (from JWT token)
  * @param {string} documentId - Document ID
+ * @param {boolean} includeFullText - Whether to reconstruct full text from chunks (default: true)
  * @returns {Promise<object|null>} - Document or null if not found
  */
-export async function getDocumentById(hotelId, documentId) {
+export async function getDocumentById(hotelId, documentId, includeFullText = true) {
   try {
     if (!hotelId) {
       throw new Error('Hotel ID is required');
@@ -217,9 +221,26 @@ export async function getDocumentById(hotelId, documentId) {
       return null;
     }
 
+    const docData = doc.data();
+
+    // If full text is needed, reconstruct it from chunks subcollection
+    if (includeFullText) {
+      const chunksSnapshot = await docRef.collection('chunks')
+        .orderBy('chunkIndex', 'asc')
+        .get();
+
+      if (!chunksSnapshot.empty) {
+        const fullText = chunksSnapshot.docs
+          .map(chunkDoc => chunkDoc.data().text)
+          .join('\n\n');
+
+        docData.fullText = fullText;
+      }
+    }
+
     return {
       id: doc.id,
-      ...doc.data()
+      ...docData
     };
   } catch (error) {
     console.error('[HotelDocument] Error getting document:', error);

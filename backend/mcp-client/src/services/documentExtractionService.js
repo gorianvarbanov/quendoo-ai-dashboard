@@ -21,11 +21,12 @@ export async function extractTextFromFile(filePath, mimeType) {
 
     if (mimeType === 'application/pdf') {
       return await extractTextFromPDF(filePath);
-    } else if (
-      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
-      mimeType === 'application/msword'
-    ) {
+    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+      // Only support .docx (XML-based format), not old .doc (binary format)
       return await extractTextFromDOCX(filePath);
+    } else if (mimeType === 'application/msword') {
+      // Old .doc format not supported - mammoth only works with .docx
+      throw new Error('Old .doc format is not supported. Please convert to .docx format.');
     } else if (
       mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       mimeType === 'application/vnd.ms-excel'

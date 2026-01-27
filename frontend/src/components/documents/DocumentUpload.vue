@@ -34,15 +34,14 @@ function handleFileChange(event) {
     // Validate file type
     const allowedTypes = [
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX only (not old .doc)
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
       'application/vnd.ms-excel', // XLS
       'image/jpeg', // JPG
       'image/png' // PNG
     ]
     if (!allowedTypes.includes(selectedFile.type)) {
-      error.value = 'Only PDF, DOCX, Excel (XLSX/XLS), and Image (JPG/PNG) files are allowed'
+      error.value = 'Only PDF, DOCX (not .doc), Excel (XLSX/XLS), and Image (JPG/PNG) files are allowed'
       file.value = null
       return
     }
@@ -150,7 +149,7 @@ function resetForm() {
           <v-file-input
             v-model="file"
             label="Select Document"
-            accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.jpeg,.png"
+            accept=".pdf,.docx,.xlsx,.xls,.jpg,.jpeg,.png"
             prepend-icon="mdi-paperclip"
             variant="outlined"
             density="comfortable"

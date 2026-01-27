@@ -33,12 +33,24 @@
           <span v-if="interimTranscript" class="interim-text">{{ interimTranscript }}</span>
         </div>
       </transition>
+
+      <!-- Hidden file input (moved outside textarea for better accessibility) -->
+      <input
+        ref="fileInputRef"
+        type="file"
+        multiple
+        accept=".pdf,.docx,.xlsx,.xls,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,image/jpeg,image/png"
+        @change="handleFileSelect"
+        style="display: none;"
+      />
+
       <!-- File attachments preview -->
       <transition-group name="fade-list" tag="div" class="attachments-preview" v-if="attachments.length > 0">
         <div
           v-for="attachment in attachments"
           :key="attachment.id"
           class="attachment-item"
+          :class="{ 'uploading': uploadingFiles && !attachment.uploaded, 'uploaded': attachment.uploaded }"
         >
           <!-- Image preview -->
           <img
@@ -53,16 +65,27 @@
           <!-- File info -->
           <div class="attachment-info">
             <div class="attachment-name">{{ attachment.name }}</div>
-            <div class="attachment-size">{{ formatFileSize(attachment.size) }}</div>
+            <div class="attachment-size">
+              {{ formatFileSize(attachment.size) }}
+              <span v-if="attachment.uploaded" class="upload-status success">
+                <v-icon size="12" class="ml-1">mdi-check-circle</v-icon>
+                Uploaded
+              </span>
+              <span v-else-if="uploadingFiles && uploadProgress[attachment.id] !== undefined" class="upload-status uploading">
+                <v-icon size="12" class="ml-1">mdi-loading mdi-spin</v-icon>
+                {{ uploadProgress[attachment.id] }}%
+              </span>
+            </div>
           </div>
 
-          <!-- Remove button -->
+          <!-- Remove button (disabled during upload) -->
           <v-btn
             icon
             variant="text"
             size="x-small"
             @click="removeAttachment(attachment.id)"
             class="attachment-remove"
+            :disabled="uploadingFiles"
           >
             <v-icon size="16">mdi-close</v-icon>
           </v-btn>
@@ -87,7 +110,7 @@
           <!-- File attachment button -->
           <v-btn
             icon
-            @click="openFilePicker"
+            @click.stop.prevent="openFilePicker"
             size="small"
             variant="text"
             class="mr-1"
@@ -95,16 +118,6 @@
           >
             <v-icon size="20">mdi-paperclip</v-icon>
           </v-btn>
-
-          <!-- Hidden file input -->
-          <input
-            ref="fileInputRef"
-            type="file"
-            multiple
-            accept=".pdf,.docx,.doc,.xlsx,.xls,.jpg,.jpeg,.png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,image/jpeg,image/png"
-            @change="handleFileSelect"
-            style="display: none;"
-          />
         </template>
 
         <template v-slot:append-inner>
@@ -139,6 +152,19 @@
         </template>
       </v-textarea>
     </div>
+
+    <!-- Upload success snackbar -->
+    <v-snackbar
+      v-model="uploadSuccessSnackbar"
+      :timeout="3000"
+      color="success"
+      location="bottom"
+    >
+      <div class="d-flex align-center">
+        <v-icon class="mr-2">mdi-check-circle</v-icon>
+        {{ uploadSuccessMessage }}
+      </div>
+    </v-snackbar>
   </div>
 </template>
 
@@ -170,6 +196,8 @@ const props = defineProps({
 const emit = defineEmits(['send'])
 
 const inputMessage = ref('')
+const uploadSuccessSnackbar = ref(false)
+const uploadSuccessMessage = ref('')
 
 // Draft management
 const {
@@ -270,11 +298,20 @@ const handleFileSelect = async (event) => {
 
 // Open file picker
 const openFilePicker = () => {
-  console.log('[ChatInput] Opening file picker, ref:', fileInputRef.value)
+  console.log('[ChatInput] ========== OPEN FILE PICKER CALLED ==========')
+  console.log('[ChatInput] fileInputRef.value:', fileInputRef.value)
+  console.log('[ChatInput] Type of ref:', typeof fileInputRef.value)
+
   if (fileInputRef.value) {
-    fileInputRef.value.click()
+    console.log('[ChatInput] Calling click() on file input')
+    try {
+      fileInputRef.value.click()
+      console.log('[ChatInput] Click triggered successfully')
+    } catch (err) {
+      console.error('[ChatInput] Error clicking file input:', err)
+    }
   } else {
-    console.error('[ChatInput] File input ref not found')
+    console.error('[ChatInput] File input ref is null or undefined')
   }
 }
 
@@ -295,6 +332,13 @@ async function handleSend() {
         console.log('[ChatInput] Uploading attachments before sending message...')
         uploadedDocuments = await uploadAttachments()
         console.log('[ChatInput] Attachments uploaded:', uploadedDocuments.map(d => d.documentId))
+
+        // Show success notification
+        const fileCount = uploadedDocuments.length
+        uploadSuccessMessage.value = fileCount === 1
+          ? `${uploadedDocuments[0].name} uploaded successfully!`
+          : `${fileCount} files uploaded successfully!`
+        uploadSuccessSnackbar.value = true
       }
 
       // Send message with document IDs
@@ -440,6 +484,27 @@ function handleShiftEnter() {
   border-radius: 8px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   max-width: 250px;
+  transition: all 0.3s ease;
+}
+
+.attachment-item.uploading {
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-color: rgba(var(--v-theme-primary), 0.3);
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+.attachment-item.uploaded {
+  background: rgba(var(--v-theme-success), 0.08);
+  border-color: rgba(var(--v-theme-success), 0.3);
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: rgba(var(--v-theme-primary), 0.3);
+  }
+  50% {
+    border-color: rgba(var(--v-theme-primary), 0.6);
+  }
 }
 
 .attachment-image {
@@ -474,6 +539,25 @@ function handleShiftEnter() {
 .attachment-size {
   font-size: 0.75rem;
   color: rgba(var(--v-theme-on-surface), 0.6);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.upload-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.upload-status.success {
+  color: rgb(var(--v-theme-success));
+}
+
+.upload-status.uploading {
+  color: rgb(var(--v-theme-primary));
 }
 
 .attachment-remove {

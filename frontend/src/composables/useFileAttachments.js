@@ -13,11 +13,9 @@ export function useFileAttachments(options = {}) {
       'image/*',
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
-      'application/msword', // DOC
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
       'application/vnd.ms-excel', // XLS
-      '.doc',
-      '.docx',
+      '.docx',  // DOCX only (not .doc)
       '.pdf',
       '.xlsx',
       '.xls',
@@ -43,8 +41,7 @@ export function useFileAttachments(options = {}) {
     // Validate file type
     const allowedMimeTypes = [
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX only (not old .doc)
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
       'application/vnd.ms-excel', // XLS
       'image/jpeg', // JPG
@@ -52,7 +49,7 @@ export function useFileAttachments(options = {}) {
     ]
 
     if (!allowedMimeTypes.includes(file.type)) {
-      error.value = 'Only PDF, DOCX, Excel (XLSX/XLS), and Image (JPG/PNG) files are allowed'
+      error.value = 'Only PDF, DOCX (not .doc), Excel (XLSX/XLS), and Image (JPG/PNG) files are allowed'
       return false
     }
 
@@ -156,10 +153,9 @@ export function useFileAttachments(options = {}) {
           formData.append('tags', JSON.stringify(['chat', 'attachment']))
 
           // Upload to document management system
+          // Note: Don't set Content-Type manually - axios will set it automatically
+          // with the correct boundary for multipart/form-data
           const response = await axios.post('/api/documents/upload', formData, {
-            headers: {
-              'Content-Type': 'multipart/form-data'
-            },
             onUploadProgress: (progressEvent) => {
               const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
               uploadProgress.value[attachment.id] = percentCompleted

@@ -30,11 +30,10 @@ const upload = multer({
     fileSize: 20 * 1024 * 1024 // 20 MB limit (for Excel files)
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, DOCX, Excel, and Images
+    // Allow PDF, DOCX (not .doc), Excel, and Images
     const allowedMimeTypes = [
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX only
       'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
       'application/vnd.ms-excel', // XLS
       'image/jpeg', // JPG
@@ -49,7 +48,7 @@ const upload = multer({
         cb(null, true);
       }
     } else {
-      cb(new Error('Invalid file type. Allowed: PDF, DOCX, XLSX, XLS, JPG, PNG.'));
+      cb(new Error('Invalid file type. Allowed: PDF, DOCX (not .doc), XLSX, XLS, JPG, PNG.'));
     }
   }
 });

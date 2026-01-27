@@ -71,11 +71,21 @@ export class InputValidator {
   validate(message) {
     this.stats.totalValidations++;
 
-    if (!message || typeof message !== 'string') {
+    // Allow empty strings (for document-only messages) but reject non-strings
+    if (typeof message !== 'string') {
       this.stats.blocked++;
       return {
         blocked: true,
         reason: 'Invalid input format'
+      };
+    }
+
+    // If message is empty, skip validation (allow document-only messages)
+    if (!message || message.trim().length === 0) {
+      return {
+        blocked: false,
+        reason: null,
+        sanitized: message
       };
     }
 
