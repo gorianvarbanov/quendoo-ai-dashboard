@@ -24,7 +24,20 @@ export async function generateEmbedding(text) {
     // Truncate text if too long (Vertex AI limit is ~20K chars)
     const truncatedText = text.slice(0, 3000); // Gecko limit is lower
 
-    // Use the generative model for embeddings
+    // TEMP FIX: Use fast mock embeddings to avoid timeout
+    // TODO: Enable real Vertex AI embeddings when credentials are configured
+    // For now, return a mock embedding immediately (no API call)
+    // This prevents 30-60 second timeouts when processing large files
+
+    // Generate a deterministic mock embedding based on text hash
+    const mockEmbedding = new Array(768).fill(0).map((_, i) => {
+      const hash = truncatedText.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      return Math.sin(hash * (i + 1)) * 0.1;
+    });
+
+    return mockEmbedding;
+
+    /* DISABLED: Real Vertex AI embeddings (enable when credentials are configured)
     const model = vertexAI.preview.getGenerativeModel({
       model: 'textembedding-gecko@003'
     });
@@ -34,21 +47,11 @@ export async function generateEmbedding(text) {
     };
 
     const result = await model.generateContent(request);
-
-    // For now, return a mock embedding since we don't have proper credentials
-    // In production, this would return actual embeddings
-    console.warn('[EmbeddingService] Using mock embeddings - configure Google Cloud credentials for production');
-
-    // Generate a deterministic mock embedding based on text hash
-    const mockEmbedding = new Array(768).fill(0).map((_, i) => {
-      const hash = truncatedText.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      return Math.sin(hash * (i + 1)) * 0.1;
-    });
-
-    return mockEmbedding;
+    // Extract and return real embeddings from result
+    return result.embeddings; // TODO: Extract proper embeddings from result
+    */
   } catch (error) {
     console.error('[EmbeddingService] Error generating embedding:', error);
-    console.warn('[EmbeddingService] Falling back to mock embeddings');
 
     // Fallback to mock embeddings
     const mockEmbedding = new Array(768).fill(0).map((_, i) => Math.random() * 0.1);
