@@ -262,6 +262,7 @@ const handleVoiceToggle = () => {
 const {
   attachments,
   uploading: uploadingFiles,
+  uploadProgress,
   error: fileError,
   addAttachment,
   removeAttachment,
