@@ -24,6 +24,7 @@
     "@google-cloud/logging": "^11.0.0",
     "@google-cloud/secret-manager": "^6.1.1",
     "@google-cloud/storage": "^7.18.0",
+    "@google-cloud/tasks": "^6.2.1",
     "@google-cloud/vertexai": "^1.10.0",
     "@google-cloud/vision": "^4.3.3",
     "@modelcontextprotocol/sdk": "^1.25.1",

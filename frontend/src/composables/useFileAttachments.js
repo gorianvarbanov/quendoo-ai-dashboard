@@ -173,8 +173,9 @@ export function useFileAttachments(options = {}) {
           if (response.data.success) {
             attachment.uploaded = true
             attachment.documentId = response.data.document.id
+            attachment.embeddingStatus = response.data.document.embeddingStatus || 'processing'
             uploadedFiles.push(attachment)
-            console.log(`[FileAttachments] Uploaded successfully: ${attachment.name} (ID: ${attachment.documentId})`)
+            console.log(`[FileAttachments] Uploaded successfully: ${attachment.name} (ID: ${attachment.documentId}, Status: ${attachment.embeddingStatus})`)
           } else {
             throw new Error(response.data.error || 'Upload failed')
           }

@@ -67,7 +67,19 @@
             <div class="attachment-name">{{ attachment.name }}</div>
             <div class="attachment-size">
               {{ formatFileSize(attachment.size) }}
-              <span v-if="attachment.uploaded" class="upload-status success">
+              <span v-if="attachment.uploaded && attachment.embeddingStatus === 'ready'" class="upload-status success">
+                <v-icon size="12" class="ml-1">mdi-check-circle</v-icon>
+                Ready
+              </span>
+              <span v-else-if="attachment.uploaded && attachment.embeddingStatus === 'processing'" class="upload-status processing">
+                <v-icon size="12" class="ml-1">mdi-timer-sand</v-icon>
+                Processing
+              </span>
+              <span v-else-if="attachment.uploaded && attachment.embeddingStatus === 'error'" class="upload-status error">
+                <v-icon size="12" class="ml-1">mdi-alert-circle</v-icon>
+                Error
+              </span>
+              <span v-else-if="attachment.uploaded" class="upload-status success">
                 <v-icon size="12" class="ml-1">mdi-check-circle</v-icon>
                 Uploaded
               </span>

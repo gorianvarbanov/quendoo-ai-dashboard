@@ -173,6 +173,17 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
 
     console.log(`[Documents] Document ${document.id} uploaded successfully`);
 
+    // Step 7: Trigger async embedding processing (background job)
+    // This will generate real Vertex AI embeddings without blocking the response
+    try {
+      const { triggerEmbeddingProcessing } = await import('../services/cloudTasksService.js');
+      await triggerEmbeddingProcessing(hotelId, document.id);
+      console.log(`[Documents] Triggered background embedding processing for document ${document.id}`);
+    } catch (taskError) {
+      console.error('[Documents] Failed to trigger background processing:', taskError);
+      // Don't fail the upload - document is still usable with mock embeddings
+    }
+
     res.json({
       success: true,
       document: {
@@ -181,8 +192,10 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
         documentType: document.documentType,
         fileSize: document.fileSize,
         chunksCount: textChunks.length,
+        embeddingStatus: document.embeddingStatus || 'processing',
         metadata: metadata
-      }
+      },
+      message: 'Document uploaded successfully. Real embeddings are being generated in the background.'
     });
   } catch (error) {
     console.error('[Documents] Upload error:', error);
@@ -199,6 +212,124 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to upload document'
+    });
+  }
+});
+
+/**
+ * POST /api/documents/process-embeddings
+ * Background job to generate real Vertex AI embeddings
+ * This is called asynchronously after initial upload
+ * NOTE: This endpoint should only be called internally or by Cloud Tasks
+ */
+router.post('/process-embeddings', async (req, res) => {
+  try {
+    const { hotelId, documentId } = req.body;
+
+    if (!hotelId || !documentId) {
+      return res.status(400).json({
+        success: false,
+        error: 'hotelId and documentId are required'
+      });
+    }
+
+    console.log(`[Documents] Processing embeddings for document ${documentId} in hotel ${hotelId}`);
+
+    // Import models dynamically to avoid circular dependencies
+    const { getDocumentById } = await import('../models/HotelDocument.js');
+    const { getHotelCollection } = await import('../config/firestore.js');
+    const { generateEmbeddingsBatch } = await import('../services/embeddingService.js');
+    const admin = await import('firebase-admin');
+
+    // Load document metadata
+    const document = await getDocumentById(hotelId, documentId, false);
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    // Check if already processed
+    if (document.embeddingStatus === 'ready') {
+      console.log(`[Documents] Document ${documentId} already has real embeddings`);
+      return res.json({
+        success: true,
+        message: 'Document already processed',
+        documentId
+      });
+    }
+
+    // Load all chunks
+    const collection = getHotelCollection(hotelId);
+    const docRef = collection.doc(documentId);
+    const chunksSnapshot = await docRef.collection('chunks')
+      .orderBy('chunkIndex', 'asc')
+      .get();
+
+    if (chunksSnapshot.empty) {
+      throw new Error('No chunks found for document');
+    }
+
+    // Extract text from chunks
+    const textChunks = chunksSnapshot.docs.map(chunkDoc => chunkDoc.data().text);
+    console.log(`[Documents] Generating real embeddings for ${textChunks.length} chunks...`);
+
+    // Generate REAL Vertex AI embeddings (with batching)
+    const startTime = Date.now();
+    const realEmbeddings = await generateEmbeddingsBatch(textChunks, false, 5);
+    const duration = Date.now() - startTime;
+    console.log(`[Documents] Generated ${realEmbeddings.length} real embeddings in ${duration}ms`);
+
+    // Update chunks with real embeddings (batch update)
+    const batch = admin.firestore().batch();
+    chunksSnapshot.docs.forEach((chunkDoc, index) => {
+      batch.update(chunkDoc.ref, {
+        embedding: realEmbeddings[index],
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    // Update main document status
+    batch.update(docRef, {
+      embeddingStatus: 'ready',
+      embeddingsGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    await batch.commit();
+
+    console.log(`[Documents] Successfully updated ${chunksSnapshot.size} chunks with real embeddings`);
+
+    res.json({
+      success: true,
+      message: 'Real embeddings generated successfully',
+      documentId,
+      chunksProcessed: realEmbeddings.length,
+      duration: `${duration}ms`
+    });
+
+  } catch (error) {
+    console.error('[Documents] Error processing embeddings:', error);
+
+    // Update document status to error
+    try {
+      const { getHotelCollection } = await import('../config/firestore.js');
+      const admin = await import('firebase-admin');
+      const collection = getHotelCollection(req.body.hotelId);
+      await collection.doc(req.body.documentId).update({
+        embeddingStatus: 'error',
+        embeddingError: error.message,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (updateError) {
+      console.error('[Documents] Failed to update error status:', updateError);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to process embeddings'
     });
   }
 });

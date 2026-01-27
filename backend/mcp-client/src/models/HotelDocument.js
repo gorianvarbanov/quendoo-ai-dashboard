@@ -81,6 +81,12 @@ export async function createDocument(hotelId, documentData) {
       chunksCount: documentData.embeddings?.length || 0,
       textPreview: documentData.fullText ? documentData.fullText.slice(0, 500) : '', // First 500 chars for preview
 
+      // Embedding status (for async processing)
+      // "processing" = Initial upload with mock embeddings, real embeddings being generated
+      // "ready" = Real Vertex AI embeddings generated and stored
+      // "error" = Failed to generate embeddings
+      embeddingStatus: documentData.embeddingStatus || 'processing',
+
       // Structured data (extracted by AI)
       structuredData: documentData.structuredData || {},
 
