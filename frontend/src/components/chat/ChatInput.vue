@@ -295,6 +295,23 @@ const handleFileSelect = async (event) => {
   if (fileInputRef.value) {
     fileInputRef.value.value = ''
   }
+
+  // Automatically start upload after file is added
+  console.log('[ChatInput] Auto-starting upload for selected files...')
+  try {
+    const uploadedDocuments = await uploadAttachments()
+    console.log('[ChatInput] Auto-upload complete:', uploadedDocuments.map(d => d.documentId))
+
+    // Show success notification
+    const fileCount = uploadedDocuments.length
+    uploadSuccessMessage.value = fileCount === 1
+      ? `${uploadedDocuments[0].name} uploaded successfully!`
+      : `${fileCount} files uploaded successfully!`
+    uploadSuccessSnackbar.value = true
+  } catch (err) {
+    console.error('[ChatInput] Auto-upload failed:', err)
+    // Error is already set in uploadAttachments composable
+  }
 }
 
 // Open file picker
@@ -327,20 +344,26 @@ async function handleSend() {
   const message = inputMessage.value.trim()
   if (message || attachments.value.length > 0) {
     try {
-      // Upload attachments first if there are any
-      let uploadedDocuments = []
-      if (attachments.value.length > 0) {
-        console.log('[ChatInput] Uploading attachments before sending message...')
-        uploadedDocuments = await uploadAttachments()
-        console.log('[ChatInput] Attachments uploaded:', uploadedDocuments.map(d => d.documentId))
+      // Collect document IDs from already uploaded attachments
+      // (files are now uploaded automatically when selected)
+      const uploadedDocuments = attachments.value.filter(a => a.uploaded && a.documentId)
+
+      // If there are unuploaded attachments, upload them now
+      const unuploadedAttachments = attachments.value.filter(a => !a.uploaded)
+      if (unuploadedAttachments.length > 0) {
+        console.log('[ChatInput] Uploading remaining attachments...')
+        const newlyUploaded = await uploadAttachments()
+        uploadedDocuments.push(...newlyUploaded)
 
         // Show success notification
-        const fileCount = uploadedDocuments.length
+        const fileCount = newlyUploaded.length
         uploadSuccessMessage.value = fileCount === 1
-          ? `${uploadedDocuments[0].name} uploaded successfully!`
+          ? `${newlyUploaded[0].name} uploaded successfully!`
           : `${fileCount} files uploaded successfully!`
         uploadSuccessSnackbar.value = true
       }
+
+      console.log('[ChatInput] Sending message with documents:', uploadedDocuments.map(d => d.documentId))
 
       // Send message with document IDs
       const messageData = {
