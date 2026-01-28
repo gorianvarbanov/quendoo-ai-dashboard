@@ -26,7 +26,7 @@ export const DOCUMENT_TYPES = {
  * @param {string} hotelId - Hotel ID (from JWT token)
  * @returns {FirebaseFirestore.CollectionReference}
  */
-function getHotelCollection(hotelId) {
+export function getHotelCollection(hotelId) {
   if (!hotelId) {
     throw new Error('Hotel ID is required for document operations');
   }
@@ -108,36 +108,48 @@ export async function createDocument(hotelId, documentData) {
     const docRef = await collection.add(document);
 
     // Store chunks and embeddings in subcollection (no size limit)
+    // CRITICAL: Firestore has TWO limits:
+    // 1. Max 500 operations per batch
+    // 2. Max 10MB transaction size
+    // Each chunk with 768-dim embedding ≈ 8KB, so 100 chunks ≈ 800KB (safe under 10MB)
     if (documentData.textChunks && documentData.embeddings) {
       const chunksCollection = docRef.collection('chunks');
-      const batch = admin.firestore().batch();
+      const BATCH_SIZE = 100; // Conservative: 100 chunks × 8KB ≈ 800KB per batch
+      const totalChunks = documentData.textChunks.length;
 
-      for (let i = 0; i < documentData.textChunks.length; i++) {
-        const chunkRef = chunksCollection.doc(`chunk_${i}`);
+      for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
+        const batch = admin.firestore().batch();
+        const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
 
-        // Contextual enrichment: add surrounding context
-        const prevChunk = i > 0 ? documentData.textChunks[i - 1].slice(-150) : '';
-        const nextChunk = i < documentData.textChunks.length - 1 ? documentData.textChunks[i + 1].slice(0, 150) : '';
+        for (let i = batchStart; i < batchEnd; i++) {
+          const chunkRef = chunksCollection.doc(`chunk_${i}`);
 
-        // Extract heading if present (markdown ## or bold text)
-        const heading = extractHeading(documentData.textChunks[i]);
+          // Contextual enrichment: add surrounding context
+          const prevChunk = i > 0 ? documentData.textChunks[i - 1].slice(-150) : '';
+          const nextChunk = i < totalChunks - 1 ? documentData.textChunks[i + 1].slice(0, 150) : '';
 
-        batch.set(chunkRef, {
-          chunkIndex: i,
-          text: documentData.textChunks[i],
-          embedding: documentData.embeddings[i],
-          // Contextual metadata
-          position: i / documentData.textChunks.length, // Relative position (0-1)
-          prevContext: prevChunk,
-          nextContext: nextChunk,
-          heading: heading,
-          wordCount: documentData.textChunks[i].split(/\s+/).length,
-          createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
+          // Extract heading if present (markdown ## or bold text)
+          const heading = extractHeading(documentData.textChunks[i]);
+
+          batch.set(chunkRef, {
+            chunkIndex: i,
+            text: documentData.textChunks[i],
+            embedding: documentData.embeddings[i],
+            // Contextual metadata
+            position: i / totalChunks, // Relative position (0-1)
+            prevContext: prevChunk,
+            nextContext: nextChunk,
+            heading: heading,
+            wordCount: documentData.textChunks[i].split(/\s+/).length,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+          });
+        }
+
+        await batch.commit();
+        console.log(`[HotelDocument] Committed batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(totalChunks / BATCH_SIZE)} (chunks ${batchStart}-${batchEnd - 1})`);
       }
 
-      await batch.commit();
-      console.log(`[HotelDocument] Created ${documentData.textChunks.length} chunks with context for document ${docRef.id}`);
+      console.log(`[HotelDocument] Created ${totalChunks} chunks with context for document ${docRef.id}`);
     }
 
     console.log(`[HotelDocument] Created document ${docRef.id} for hotel ${hotelId}`);
@@ -444,5 +456,6 @@ export default {
   listDocumentsByHotel,
   getDocumentById,
   deleteDocument,
-  searchDocumentsByVector
+  searchDocumentsByVector,
+  getHotelCollection
 };

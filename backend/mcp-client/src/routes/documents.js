@@ -217,6 +217,55 @@ router.post('/upload', requireHotelAuth, upload.single('file'), async (req, res)
 });
 
 /**
+ * GET /api/documents/:documentId
+ * Get document metadata and status
+ * Used for polling embedding status
+ */
+router.get('/:documentId', requireHotelAuth, async (req, res) => {
+  try {
+    const hotelId = req.hotel?.hotelId;
+    const { documentId } = req.params;
+
+    console.log(`[Documents] Getting document ${documentId} for hotel ${hotelId}`);
+
+    // Import dynamically to avoid circular dependencies
+    const { getDocumentById } = await import('../models/HotelDocument.js');
+
+    // Get document (without full text for performance)
+    const document = await getDocumentById(hotelId, documentId, false);
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: 'Document not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      document: {
+        id: document.id,
+        fileName: document.fileName,
+        fileType: document.fileType,
+        fileSize: document.fileSize,
+        embeddingStatus: document.embeddingStatus,
+        chunksCount: document.chunksCount,
+        createdAt: document.createdAt,
+        updatedAt: document.updatedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('[Documents] Error getting document:', error);
+
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to get document'
+    });
+  }
+});
+
+/**
  * POST /api/documents/process-embeddings
  * Background job to generate real Vertex AI embeddings
  * This is called asynchronously after initial upload
@@ -236,10 +285,9 @@ router.post('/process-embeddings', async (req, res) => {
     console.log(`[Documents] Processing embeddings for document ${documentId} in hotel ${hotelId}`);
 
     // Import models dynamically to avoid circular dependencies
-    const { getDocumentById } = await import('../models/HotelDocument.js');
-    const { getHotelCollection } = await import('../config/firestore.js');
+    const { getDocumentById, getHotelCollection } = await import('../models/HotelDocument.js');
     const { generateEmbeddingsBatch } = await import('../services/embeddingService.js');
-    const admin = await import('firebase-admin');
+    const admin = (await import('firebase-admin')).default;
 
     // Load document metadata
     const document = await getDocumentById(hotelId, documentId, false);
@@ -274,33 +322,49 @@ router.post('/process-embeddings', async (req, res) => {
 
     // Extract text from chunks
     const textChunks = chunksSnapshot.docs.map(chunkDoc => chunkDoc.data().text);
-    console.log(`[Documents] Generating real embeddings for ${textChunks.length} chunks...`);
+    const totalChunks = textChunks.length;
 
-    // Generate REAL Vertex AI embeddings (with batching)
+    console.log(`[Documents] Generating REAL Vertex AI embeddings for ${totalChunks} chunks...`);
+
+    // Generate REAL Vertex AI embeddings (with batching and retry logic)
     const startTime = Date.now();
     const realEmbeddings = await generateEmbeddingsBatch(textChunks, false, 5);
     const duration = Date.now() - startTime;
     console.log(`[Documents] Generated ${realEmbeddings.length} real embeddings in ${duration}ms`);
 
     // Update chunks with real embeddings (batch update)
-    const batch = admin.firestore().batch();
-    chunksSnapshot.docs.forEach((chunkDoc, index) => {
-      batch.update(chunkDoc.ref, {
-        embedding: realEmbeddings[index],
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    });
+    // CRITICAL: Firestore has TWO limits:
+    // 1. Max 500 operations per batch
+    // 2. Max 10MB transaction size
+    // Each chunk with 768-dim embedding ≈ 8KB, so 100 chunks ≈ 800KB (safe under 10MB)
+    const BATCH_SIZE = 100;
+    const allChunks = chunksSnapshot.docs;
 
-    // Update main document status
-    batch.update(docRef, {
+    for (let batchStart = 0; batchStart < totalChunks; batchStart += BATCH_SIZE) {
+      const batch = admin.firestore().batch();
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalChunks);
+
+      for (let i = batchStart; i < batchEnd; i++) {
+        batch.update(allChunks[i].ref, {
+          embedding: realEmbeddings[i],
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+      }
+
+      await batch.commit();
+      console.log(`[Documents] Committed batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(totalChunks / BATCH_SIZE)} (chunks ${batchStart}-${batchEnd - 1})`);
+    }
+
+    // Update main document status to 'ready'
+    const statusBatch = admin.firestore().batch();
+    statusBatch.update(docRef, {
       embeddingStatus: 'ready',
       embeddingsGeneratedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    await statusBatch.commit();
 
-    await batch.commit();
-
-    console.log(`[Documents] Successfully updated ${chunksSnapshot.size} chunks with real embeddings`);
+    console.log(`[Documents] Successfully updated ${totalChunks} chunks with REAL Vertex AI embeddings`);
 
     res.json({
       success: true,
@@ -315,13 +379,13 @@ router.post('/process-embeddings', async (req, res) => {
 
     // Update document status to error
     try {
-      const { getHotelCollection } = await import('../config/firestore.js');
-      const admin = await import('firebase-admin');
+      const { getHotelCollection } = await import('../models/HotelDocument.js');
+      const adminModule = (await import('firebase-admin')).default;
       const collection = getHotelCollection(req.body.hotelId);
       await collection.doc(req.body.documentId).update({
         embeddingStatus: 'error',
         embeddingError: error.message,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        updatedAt: adminModule.firestore.FieldValue.serverTimestamp()
       });
     } catch (updateError) {
       console.error('[Documents] Failed to update error status:', updateError);

@@ -1,79 +1,100 @@
 /**
  * Embedding Service - Generate vector embeddings using Vertex AI
- * Uses textembedding-gecko@003 model (768 dimensions)
+ * Uses text-embedding-004 model (768 dimensions)
+ * Production-ready with retry logic and rate limiting
  */
 
-import { VertexAI } from '@google-cloud/vertexai';
+import { PredictionServiceClient } from '@google-cloud/aiplatform';
+import { helpers } from '@google-cloud/aiplatform';
 
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'quendoo-ai-dashboard';
 const LOCATION = 'us-central1';
+const MODEL = 'text-embedding-004';
 
-// Initialize Vertex AI client
-const vertexAI = new VertexAI({
-  project: PROJECT_ID,
-  location: LOCATION
+// Initialize Prediction Service Client
+const client = new PredictionServiceClient({
+  apiEndpoint: `${LOCATION}-aiplatform.googleapis.com`
 });
 
 /**
- * Generate embedding for a single text chunk
+ * Generate embedding for a single text chunk using Vertex AI
  * @param {string} text - Text to embed (max 20,000 chars)
  * @param {boolean} useMock - Use mock embeddings for fast initial upload (default: true)
+ * @param {number} retries - Number of retry attempts (default: 3)
  * @returns {Promise<number[]>} - 768-dimensional embedding vector
  */
-export async function generateEmbedding(text, useMock = true) {
+export async function generateEmbedding(text, useMock = true, retries = 3) {
   try {
-    // Truncate text if too long (Vertex AI limit is ~20K chars)
-    const truncatedText = text.slice(0, 3000); // Gecko limit is lower
+    // Truncate text if too long
+    const truncatedText = text.slice(0, 20000);
 
     // For initial upload, use fast mock embeddings
     // Real embeddings generated asynchronously in background
     if (useMock) {
-      // Generate a deterministic mock embedding based on text hash
-      const mockEmbedding = new Array(768).fill(0).map((_, i) => {
-        const hash = truncatedText.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-        return Math.sin(hash * (i + 1)) * 0.1;
-      });
-      return mockEmbedding;
+      return generateMockEmbedding(truncatedText);
     }
 
     // Real Vertex AI embeddings (for background processing)
     console.log('[EmbeddingService] Generating real Vertex AI embedding...');
-    const model = vertexAI.preview.getGenerativeModel({
-      model: 'textembedding-gecko@003'
+
+    const endpoint = `projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL}`;
+
+    // Prepare the request
+    const instanceValue = helpers.toValue({
+      content: truncatedText,
+      task_type: 'RETRIEVAL_DOCUMENT'
     });
 
+    const instances = [instanceValue];
     const request = {
-      contents: [{
-        role: 'user',
-        parts: [{ text: truncatedText }]
-      }]
+      endpoint,
+      instances
     };
 
-    const result = await model.generateContent(request);
+    try {
+      const [response] = await client.predict(request);
 
-    // Extract embedding from response
-    // Vertex AI response structure: result.response.candidates[0].content.parts[0].embedding
-    if (result?.response?.candidates?.[0]?.content?.parts?.[0]?.embedding) {
-      return result.response.candidates[0].content.parts[0].embedding;
+      if (response.predictions && response.predictions.length > 0) {
+        const prediction = response.predictions[0];
+        const embeddingsValue = prediction.structValue.fields.embeddings;
+
+        if (embeddingsValue && embeddingsValue.structValue) {
+          const valuesArray = embeddingsValue.structValue.fields.values.listValue.values;
+          const embedding = valuesArray.map(v => v.numberValue);
+
+          console.log(`[EmbeddingService] Successfully generated embedding (${embedding.length} dimensions)`);
+          return embedding;
+        }
+      }
+
+      throw new Error('Invalid response structure from Vertex AI');
+
+    } catch (apiError) {
+      // Handle rate limiting with exponential backoff
+      if (apiError.code === 8 || apiError.code === 429) { // RESOURCE_EXHAUSTED
+        if (retries > 0) {
+          const delay = (4 - retries) * 1000; // 1s, 2s, 3s
+          console.log(`[EmbeddingService] Rate limited, retrying in ${delay}ms (${retries} retries left)...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          return generateEmbedding(text, false, retries - 1);
+        } else {
+          console.warn('[EmbeddingService] Rate limit exceeded, falling back to mock embedding');
+          return generateMockEmbedding(truncatedText);
+        }
+      }
+
+      throw apiError;
     }
-
-    // Fallback: Try direct embedding property
-    if (result?.embedding) {
-      return result.embedding;
-    }
-
-    console.warn('[EmbeddingService] Could not extract embedding from Vertex AI response, using mock');
-    return generateMockEmbedding(truncatedText);
 
   } catch (error) {
     console.error('[EmbeddingService] Error generating embedding:', error);
-    // Fallback to mock embeddings
+    // Fallback to mock embeddings on error
     return generateMockEmbedding(text);
   }
 }
 
 /**
- * Generate deterministic mock embedding (for fallback)
+ * Generate deterministic mock embedding (for fallback and initial upload)
  * @param {string} text - Text to embed
  * @returns {number[]} - 768-dimensional mock embedding
  */
@@ -113,16 +134,18 @@ export async function generateEmbeddingsBatch(texts, useMock = true, batchSize =
 
       console.log(`[EmbeddingService] Processing batch ${batchNum}/${totalBatches} (${batch.length} chunks)`);
 
-      // Process batch in parallel
+      // Process batch in parallel with retry logic
       const batchEmbeddings = await Promise.all(
         batch.map(text => generateEmbedding(text, false))
       );
 
       allEmbeddings.push(...batchEmbeddings);
 
-      // Small delay between batches to respect rate limits
+      // Delay between batches to respect rate limits (10 requests/minute)
       if (i + batchSize < texts.length) {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        const delayMs = 6000 / batchSize; // Spread out to ~10 req/min
+        console.log(`[EmbeddingService] Waiting ${delayMs}ms before next batch...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
 

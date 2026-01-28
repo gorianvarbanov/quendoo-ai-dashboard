@@ -20,32 +20,13 @@
 
       <div class="sidebar-actions">
         <v-btn
-          variant="outlined"
+          variant="text"
           prepend-icon="mdi-plus"
           @click="handleNewConversation"
           block
           class="new-chat-btn"
         >
           {{ uiTranslations.newConversation }}
-        </v-btn>
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-file-document-multiple"
-          @click="goToDocuments"
-          block
-          class="mt-2"
-        >
-          {{ uiTranslations.documents }}
-        </v-btn>
-
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-calendar-clock"
-          @click="goToTasks"
-          block
-          class="mt-2"
-        >
-          {{ uiTranslations.tasks }}
         </v-btn>
       </div>
 
@@ -55,61 +36,25 @@
           ref="searchInputRef"
           v-model="searchQuery"
           :placeholder="uiTranslations.searchConversations"
-          variant="outlined"
+          variant="solo"
           density="compact"
           hide-details
           clearable
           prepend-inner-icon="mdi-magnify"
           @update:model-value="handleSearch"
           class="search-input"
+          flat
+          bg-color="rgba(var(--v-theme-on-surface), 0.05)"
         >
           <template v-slot:append-inner>
-            <v-chip v-if="!searching" size="x-small" variant="outlined" class="mr-1">
-              Ctrl+K
-            </v-chip>
             <v-progress-circular
               v-if="searching"
               indeterminate
-              size="20"
+              size="16"
               width="2"
             />
           </template>
         </v-text-field>
-      </div>
-
-      <!-- Filter Chips -->
-      <div v-if="!searchQuery" class="sidebar-filters">
-        <v-chip-group
-          v-model="activeFilter"
-          selected-class="text-primary"
-          mandatory
-          class="filter-chips"
-        >
-          <v-chip value="all" size="small" variant="outlined">
-            <v-icon start size="16">mdi-view-list</v-icon>
-            All
-          </v-chip>
-          <v-chip value="favorites" size="small" variant="outlined">
-            <v-icon start size="16">mdi-star</v-icon>
-            Favorites
-          </v-chip>
-          <v-chip
-            v-for="tag in allUsedTags"
-            :key="tag"
-            :value="tag"
-            size="small"
-            variant="outlined"
-          >
-            <v-icon
-              start
-              size="16"
-              :color="predefinedTags.find(t => t.name === tag)?.color"
-            >
-              {{ predefinedTags.find(t => t.name === tag)?.icon || 'mdi-label' }}
-            </v-icon>
-            {{ tag }}
-          </v-chip>
-        </v-chip-group>
       </div>
 
       <div class="sidebar-content">
@@ -150,114 +95,17 @@
                 :class="{ active: conv.id === currentConversation?.id }"
                 @click="selectConversation(conv.id)"
               >
-                <div class="conv-header">
-                  <span class="conv-title">{{ conv.title }}</span>
-                  <v-btn
-                    icon
-                    variant="text"
-                    size="x-small"
-                    @click.stop="toggleFavorite(conv.id)"
-                    class="favorite-btn"
-                  >
-                    <v-icon size="16" :color="isFavorite(conv.id) ? 'warning' : 'grey'">
-                      {{ isFavorite(conv.id) ? 'mdi-star' : 'mdi-star-outline' }}
-                    </v-icon>
-                  </v-btn>
-                </div>
-
-                <!-- Tags -->
-                <div v-if="getTags(conv.id).length > 0" class="conv-tags">
-                  <v-chip
-                    v-for="tag in getTags(conv.id)"
-                    :key="tag"
-                    size="x-small"
-                    :color="predefinedTags.find(t => t.name === tag)?.color"
-                    variant="flat"
-                  >
-                    {{ tag }}
-                  </v-chip>
-                </div>
+                <span class="conv-title">{{ conv.title }}</span>
+                <v-btn
+                  icon
+                  variant="text"
+                  size="x-small"
+                  @click.stop="handleDeleteConversation(conv.id)"
+                  class="delete-btn"
+                >
+                  <v-icon size="14">mdi-delete-outline</v-icon>
+                </v-btn>
               </div>
-
-              <!-- Conversation menu -->
-              <v-menu location="bottom end">
-                <template #activator="{ props }">
-                  <v-btn
-                    icon
-                    variant="text"
-                    size="x-small"
-                    v-bind="props"
-                    class="conversation-menu-btn"
-                    @click.stop
-                  >
-                    <v-icon size="16">mdi-dots-vertical</v-icon>
-                  </v-btn>
-                </template>
-
-                <v-list density="compact">
-                  <!-- Tags submenu -->
-                  <v-menu location="end" open-on-hover>
-                    <template #activator="{ props }">
-                      <v-list-item v-bind="props">
-                        <template #prepend>
-                          <v-icon size="18">mdi-label</v-icon>
-                        </template>
-                        <v-list-item-title>Manage Tags</v-list-item-title>
-                        <template #append>
-                          <v-icon size="18">mdi-chevron-right</v-icon>
-                        </template>
-                      </v-list-item>
-                    </template>
-
-                    <v-list density="compact">
-                      <v-list-item
-                        v-for="tag in predefinedTags"
-                        :key="tag.name"
-                        @click="toggleTag(conv.id, tag.name)"
-                      >
-                        <template #prepend>
-                          <v-icon size="18" :color="tag.color">
-                            {{ getTags(conv.id).includes(tag.name) ? 'mdi-check-circle' : tag.icon }}
-                          </v-icon>
-                        </template>
-                        <v-list-item-title>{{ tag.name }}</v-list-item-title>
-                      </v-list-item>
-                    </v-list>
-                  </v-menu>
-
-                  <v-divider class="my-1" />
-
-                  <v-list-item @click="handleExport(conv, 'markdown')">
-                    <template #prepend>
-                      <v-icon size="18">mdi-language-markdown</v-icon>
-                    </template>
-                    <v-list-item-title>Export as Markdown</v-list-item-title>
-                  </v-list-item>
-
-                  <v-list-item @click="handleExport(conv, 'pdf')">
-                    <template #prepend>
-                      <v-icon size="18">mdi-file-pdf-box</v-icon>
-                    </template>
-                    <v-list-item-title>Export as PDF</v-list-item-title>
-                  </v-list-item>
-
-                  <v-list-item @click="handleExport(conv, 'json')">
-                    <template #prepend>
-                      <v-icon size="18">mdi-code-json</v-icon>
-                    </template>
-                    <v-list-item-title>Export as JSON</v-list-item-title>
-                  </v-list-item>
-
-                  <v-divider class="my-1" />
-
-                  <v-list-item @click="handleDeleteConversation(conv.id)">
-                    <template #prepend>
-                      <v-icon size="18" color="error">mdi-delete</v-icon>
-                    </template>
-                    <v-list-item-title class="text-error">Delete</v-list-item-title>
-                  </v-list-item>
-                </v-list>
-              </v-menu>
             </div>
           </div>
         </div>
@@ -265,44 +113,63 @@
 
       <div class="sidebar-footer">
         <div class="footer-content">
-          <v-select
-            v-model="selectedModel"
-            :items="models"
-            variant="outlined"
-            density="compact"
-            hide-details
-            class="model-selector-sidebar"
-            prepend-inner-icon="mdi-brain"
-          />
-          <div class="footer-actions">
-            <v-btn
-              icon
-              variant="text"
-              size="small"
-              @click="settingsDrawer = true"
-              title="Settings"
-            >
-              <v-icon size="18">mdi-cog</v-icon>
-            </v-btn>
-            <v-btn
-              icon
-              variant="text"
-              size="small"
-              @click="theme.global.name.value = theme.global.name.value === 'light' ? 'dark' : 'light'"
-              title="Toggle theme"
-            >
-              <v-icon size="18">{{ theme.global.name.value === 'light' ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
-            </v-btn>
-            <v-btn
-              icon
-              variant="text"
-              size="small"
-              @click="shortcutsHelpDialog = true"
-              title="Keyboard Shortcuts (Ctrl+/)"
-            >
-              <v-icon size="18">mdi-keyboard</v-icon>
-            </v-btn>
-          </div>
+          <v-menu location="top" offset="8">
+            <template #activator="{ props }">
+              <v-btn
+                v-bind="props"
+                variant="text"
+                block
+                class="footer-user-btn"
+              >
+                <div class="footer-user-info">
+                  <v-icon size="20">mdi-account-circle</v-icon>
+                  <span class="footer-user-name">{{ hotelName || 'Hotel' }}</span>
+                </div>
+                <v-icon size="16">mdi-dots-horizontal</v-icon>
+              </v-btn>
+            </template>
+
+            <v-list density="compact" class="footer-menu">
+              <v-list-item @click="settingsDrawer = true">
+                <template #prepend>
+                  <v-icon size="18">mdi-cog</v-icon>
+                </template>
+                <v-list-item-title>Settings</v-list-item-title>
+              </v-list-item>
+
+              <v-list-item @click="goToDocuments">
+                <template #prepend>
+                  <v-icon size="18">mdi-file-document-multiple</v-icon>
+                </template>
+                <v-list-item-title>{{ uiTranslations.documents }}</v-list-item-title>
+              </v-list-item>
+
+              <v-list-item @click="goToTasks">
+                <template #prepend>
+                  <v-icon size="18">mdi-calendar-clock</v-icon>
+                </template>
+                <v-list-item-title>{{ uiTranslations.tasks }}</v-list-item-title>
+              </v-list-item>
+
+              <v-divider class="my-1" />
+
+              <v-list-item @click="theme.global.name.value = theme.global.name.value === 'light' ? 'dark' : 'light'">
+                <template #prepend>
+                  <v-icon size="18">{{ theme.global.name.value === 'light' ? 'mdi-weather-night' : 'mdi-weather-sunny' }}</v-icon>
+                </template>
+                <v-list-item-title>{{ theme.global.name.value === 'light' ? 'Dark mode' : 'Light mode' }}</v-list-item-title>
+              </v-list-item>
+
+              <v-divider class="my-1" />
+
+              <v-list-item @click="handleLogout">
+                <template #prepend>
+                  <v-icon size="18" color="error">mdi-logout</v-icon>
+                </template>
+                <v-list-item-title class="text-error">{{ uiTranslations.logout }}</v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </v-menu>
         </div>
       </div>
     </div>
@@ -322,7 +189,25 @@
           >
             <v-icon size="20">mdi-menu</v-icon>
           </v-btn>
-          <span class="conversation-title">{{ currentConversation?.title || uiTranslations.newConversation }}</span>
+
+          <!-- Model Selector -->
+          <v-select
+            v-model="selectedModel"
+            :items="models"
+            variant="solo"
+            density="compact"
+            hide-details
+            flat
+            class="model-selector-topbar"
+            bg-color="rgba(var(--v-theme-on-surface), 0.05)"
+          >
+            <template #selection="{ item }">
+              <div class="model-selector-display">
+                <v-icon size="16" class="mr-2">mdi-brain</v-icon>
+                <span>{{ item.title }}</span>
+              </div>
+            </template>
+          </v-select>
 
           <v-spacer />
 
@@ -336,7 +221,7 @@
                 v-bind="props"
                 title="Export conversation"
               >
-                <v-icon size="20">mdi-download</v-icon>
+                <v-icon size="18">mdi-dots-horizontal</v-icon>
               </v-btn>
             </template>
 
@@ -1368,20 +1253,38 @@ watch(settingsDrawer, (isOpen) => {
 }
 
 .sidebar-actions {
-  padding: 16px;
+  padding: 12px;
 }
 
 .new-chat-btn {
   text-transform: none;
-  font-weight: 500;
+  font-weight: 400;
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  justify-content: flex-start;
+  padding-left: 12px;
+}
+
+.new-chat-btn:hover {
+  background: rgba(var(--v-theme-on-surface), 0.05);
 }
 
 .sidebar-search {
-  padding: 0 16px 12px 16px;
+  padding: 8px 12px 16px 12px;
 }
 
 .search-input {
-  font-size: 14px;
+  font-size: 13px;
+}
+
+.search-input :deep(.v-field) {
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.search-input :deep(.v-field__input) {
+  padding: 10px 12px;
+  min-height: 0;
 }
 
 .section-header {
@@ -1444,62 +1347,89 @@ watch(settingsDrawer, (isOpen) => {
 .conversation-item {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  border-radius: 6px;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin: 2px 0;
+  border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.15s ease;
   position: relative;
+  gap: 8px;
 }
 
 .conversation-item:hover {
-  background: rgba(var(--v-theme-on-surface), 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.conversation-item:hover .delete-btn {
+  opacity: 1;
 }
 
 .conversation-item.active {
-  background: rgba(var(--v-theme-on-surface), 0.1);
+  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .conv-title {
-  font-size: 0.875rem;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   flex: 1;
-  color: rgb(var(--v-theme-on-surface));
-  word-break: break-word;
+  color: rgba(var(--v-theme-on-surface), 0.85);
+  min-width: 0;
+}
+
+.delete-btn {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  flex-shrink: 0;
+}
+
+.conversation-item.active .delete-btn {
+  opacity: 0.7;
 }
 
 .sidebar-footer {
-  padding: 12px 16px;
+  padding: 8px;
   border-top: 1px solid rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .footer-content {
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
-.model-selector-sidebar {
-  font-size: 0.875rem;
-}
-
-.model-selector-sidebar :deep(.v-field) {
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.model-selector-sidebar :deep(.v-field__input) {
+.footer-user-btn {
+  text-transform: none;
   padding: 8px 12px;
+  height: auto;
+  min-height: 44px;
+  border-radius: 8px;
+  justify-content: space-between;
 }
 
-.footer-actions {
+.footer-user-btn:hover {
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+.footer-user-info {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  flex: 1;
+  text-align: left;
+}
+
+.footer-user-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.footer-menu {
+  min-width: 220px;
 }
 
 /* Main Chat Area */
@@ -1529,11 +1459,27 @@ watch(settingsDrawer, (isOpen) => {
   flex-shrink: 0;
 }
 
-.conversation-title {
-  font-size: 0.9375rem;
+.model-selector-topbar {
+  max-width: 240px;
+  min-width: 180px;
+}
+
+.model-selector-topbar :deep(.v-field) {
+  border-radius: 8px;
+  box-shadow: none;
+  font-size: 13px;
+}
+
+.model-selector-topbar :deep(.v-field__input) {
+  padding: 8px 12px;
+  min-height: 0;
+}
+
+.model-selector-display {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
   font-weight: 500;
-  color: rgb(var(--v-theme-on-surface));
-  flex: 1;
 }
 
 .error-alert {
@@ -1670,89 +1616,8 @@ watch(settingsDrawer, (isOpen) => {
   line-height: 1.4;
 }
 
-/* Tags and Favorites Styles */
-.sidebar-filters {
-  padding: 8px 16px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
-}
-
-.filter-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
+/* Conversation item wrapper (simplified) */
 .conversation-item-wrapper {
   position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 4px 8px;
-}
-
-.conversation-item-wrapper:hover .conversation-menu-btn {
-  opacity: 1;
-}
-
-.conversation-item {
-  flex: 1;
-  padding: 10px 12px;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: background 0.2s;
-  min-width: 0;
-}
-
-.conversation-item:hover {
-  background: rgba(var(--v-theme-on-surface), 0.05);
-}
-
-.conversation-item.active {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-
-.conv-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.conv-title {
-  flex: 1;
-  font-size: 0.875rem;
-  color: rgb(var(--v-theme-on-surface));
-  overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  word-break: break-word;
-}
-
-.favorite-btn {
-  opacity: 0;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-}
-
-.conversation-item-wrapper:hover .favorite-btn,
-.favorite-btn.active {
-  opacity: 1;
-}
-
-.conv-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.conversation-menu-btn {
-  opacity: 0;
-  transition: opacity 0.2s;
-  flex-shrink: 0;
-  align-self: flex-start;
-  margin-top: 10px;
 }
 </style>

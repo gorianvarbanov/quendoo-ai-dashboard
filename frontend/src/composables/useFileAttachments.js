@@ -125,6 +125,51 @@ export function useFileAttachments(options = {}) {
     console.log('[FileAttachments] Cleared all attachments')
   }
 
+  // Poll document status to check when embeddings are ready
+  const pollDocumentStatus = async (documentId) => {
+    try {
+      const response = await axios.get(`/api/documents/${documentId}`)
+
+      if (response.data.success) {
+        return response.data.document.embeddingStatus
+      }
+
+      return 'processing'
+    } catch (error) {
+      console.error(`[FileAttachments] Failed to check status for ${documentId}:`, error)
+      return 'error'
+    }
+  }
+
+  // Start polling for embedding status updates
+  const startEmbeddingStatusPolling = (attachment) => {
+    if (!attachment.documentId || attachment.embeddingStatus === 'ready') {
+      return
+    }
+
+    console.log(`[FileAttachments] Starting status polling for ${attachment.name}`)
+
+    const pollInterval = setInterval(async () => {
+      const newStatus = await pollDocumentStatus(attachment.documentId)
+
+      console.log(`[FileAttachments] Status update for ${attachment.name}: ${attachment.embeddingStatus} → ${newStatus}`)
+
+      attachment.embeddingStatus = newStatus
+
+      // Stop polling when ready or error
+      if (newStatus === 'ready' || newStatus === 'error') {
+        clearInterval(pollInterval)
+        console.log(`[FileAttachments] Stopped polling for ${attachment.name} (status: ${newStatus})`)
+      }
+    }, 5000) // Poll every 5 seconds
+
+    // Stop polling after 2 minutes max
+    setTimeout(() => {
+      clearInterval(pollInterval)
+      console.log(`[FileAttachments] Stopped polling for ${attachment.name} (timeout)`)
+    }, 120000)
+  }
+
   // Upload attachments to server (document management system)
   const uploadAttachments = async () => {
     console.log('[FileAttachments] uploadAttachments called. Attachments:', attachments.value.length)
@@ -176,6 +221,11 @@ export function useFileAttachments(options = {}) {
             attachment.embeddingStatus = response.data.document.embeddingStatus || 'processing'
             uploadedFiles.push(attachment)
             console.log(`[FileAttachments] Uploaded successfully: ${attachment.name} (ID: ${attachment.documentId}, Status: ${attachment.embeddingStatus})`)
+
+            // Start polling for embedding status if processing
+            if (attachment.embeddingStatus === 'processing') {
+              startEmbeddingStatusPolling(attachment)
+            }
           } else {
             throw new Error(response.data.error || 'Upload failed')
           }

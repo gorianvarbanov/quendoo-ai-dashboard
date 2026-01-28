@@ -1,6 +1,13 @@
 <template>
   <div class="chat-input-container">
-    <div class="input-wrapper">
+    <div
+      class="input-wrapper"
+      :class="{ 'drag-over': isDragging }"
+      @dragenter.prevent="handleDragEnter"
+      @dragover.prevent="handleDragOver"
+      @dragleave.prevent="handleDragLeave"
+      @drop.prevent="handleDrop"
+    >
       <!-- Voice error alert -->
       <transition name="fade">
         <v-alert
@@ -14,6 +21,17 @@
         >
           {{ voiceError }}
         </v-alert>
+      </transition>
+
+      <!-- Drag overlay -->
+      <transition name="fade">
+        <div v-if="isDragging" class="drag-overlay">
+          <div class="drag-content">
+            <v-icon size="48" color="primary">mdi-cloud-upload</v-icon>
+            <div class="drag-text">Drop files here</div>
+            <div class="drag-subtext">PDF, DOCX, Excel, Images</div>
+          </div>
+        </div>
       </transition>
 
       <!-- Draft indicator -->
@@ -287,6 +305,96 @@ const {
 
 // File input ref
 const fileInputRef = ref(null)
+
+// Drag & drop state
+const isDragging = ref(false)
+let dragCounter = 0 // Track nested drag events
+
+// Handle drag enter
+const handleDragEnter = (event) => {
+  dragCounter++
+  console.log('[ChatInput] Drag enter, counter:', dragCounter, 'types:', event.dataTransfer.types)
+
+  // Check if dragging files
+  if (event.dataTransfer.types.includes('Files')) {
+    isDragging.value = true
+    console.log('[ChatInput] Dragging files detected, isDragging = true')
+  }
+}
+
+// Handle drag over
+const handleDragOver = (event) => {
+  event.dataTransfer.dropEffect = 'copy'
+
+  // Make sure isDragging stays true
+  if (event.dataTransfer.types.includes('Files') && !isDragging.value) {
+    isDragging.value = true
+    console.log('[ChatInput] Drag over - activating isDragging')
+  }
+}
+
+// Handle drag leave
+const handleDragLeave = (event) => {
+  dragCounter--
+  console.log('[ChatInput] Drag leave, counter:', dragCounter)
+
+  // Only set isDragging to false when we've left all nested elements
+  if (dragCounter === 0) {
+    isDragging.value = false
+    console.log('[ChatInput] All drags left, isDragging = false')
+  }
+}
+
+// Handle drop
+const handleDrop = async (event) => {
+  dragCounter = 0
+  isDragging.value = false
+
+  const files = Array.from(event.dataTransfer.files || [])
+
+  if (files.length === 0) {
+    console.log('[ChatInput] No files dropped')
+    return
+  }
+
+  console.log('[ChatInput] Files dropped:', files.length)
+
+  // Process dropped files same as file picker
+  let addedCount = 0
+  for (const file of files) {
+    console.log('[ChatInput] Adding dropped file:', file.name, file.type, 'size:', file.size)
+    const added = await addAttachment(file)
+    console.log('[ChatInput] File added result:', added)
+    if (added) addedCount++
+  }
+
+  // Show error if no files were added
+  if (addedCount === 0) {
+    console.log('[ChatInput] No files were added - showing error')
+    uploadSuccessMessage.value = error.value || 'Files not supported. Only PDF, DOCX, Excel, and Images are allowed.'
+    uploadSuccessSnackbar.value = true
+    return
+  }
+
+  console.log('[ChatInput] All dropped files added. Current attachments:', attachments.value.length)
+
+  // Automatically start upload
+  console.log('[ChatInput] Auto-starting upload for', attachments.value.length, 'attachment(s)...')
+
+  try {
+    const uploadedDocuments = await uploadAttachments()
+    console.log('[ChatInput] Auto-upload complete. Uploaded', uploadedDocuments.length, 'document(s)')
+
+    // Show success notification
+    const fileCount = uploadedDocuments.length
+    uploadSuccessMessage.value = fileCount === 1
+      ? `${uploadedDocuments[0].name} uploaded successfully!`
+      : `${fileCount} files uploaded successfully!`
+    uploadSuccessSnackbar.value = true
+  } catch (err) {
+    console.error('[ChatInput] Auto-upload failed:', err)
+  }
+}
 
 // Handle file selection
 const handleFileSelect = async (event) => {
@@ -600,6 +708,71 @@ function handleShiftEnter() {
   color: rgb(var(--v-theme-success));
 }
 
+/* Drag & Drop styles */
+.input-wrapper.drag-over {
+  opacity: 0.9;
+  transform: scale(1.01);
+  transition: all 0.2s ease;
+}
+
+.drag-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(var(--v-theme-primary), 0.15);
+  border: 3px dashed rgb(var(--v-theme-primary));
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+  animation: pulse-border 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% {
+    border-color: rgb(var(--v-theme-primary));
+    background: rgba(var(--v-theme-primary), 0.15);
+  }
+  50% {
+    border-color: rgba(var(--v-theme-primary), 0.7);
+    background: rgba(var(--v-theme-primary), 0.08);
+  }
+}
+
+.drag-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  animation: bounce-subtle 1s ease-in-out infinite;
+}
+
+@keyframes bounce-subtle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.drag-text {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: rgb(var(--v-theme-primary));
+}
+
+.drag-subtext {
+  font-size: 0.875rem;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
 .upload-status.uploading {
   color: rgb(var(--v-theme-primary));
 }
@@ -625,6 +798,7 @@ function handleShiftEnter() {
 }
 
 .input-wrapper {
+  position: relative;
   background: rgb(var(--v-theme-surface));
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
