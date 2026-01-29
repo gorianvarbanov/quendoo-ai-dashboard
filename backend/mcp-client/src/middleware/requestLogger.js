@@ -54,19 +54,3 @@ export function logHttpRequests(req, res, next) {
   next();
 }
 
-/**
- * Error logging middleware
- * Should be added after all routes
- */
-export function logErrors(err, req, res, next) {
-  logger.logError(err, {
-    requestId: req.requestId,
-    method: req.method,
-    path: req.path,
-    hotelId: req.hotel?.hotelId,
-    userId: req.user?.username
-  });
-
-  // Pass error to next error handler
-  next(err);
-}

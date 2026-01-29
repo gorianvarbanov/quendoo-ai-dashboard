@@ -14,16 +14,6 @@ export function sha256(input) {
 }
 
 /**
- * Create a short hash suitable for user IDs
- * Takes first 16 characters of SHA256 hash
- * @param {string} input - String to hash
- * @returns {string} Short hash (16 characters)
- */
-export function createUserId(input) {
-  return sha256(input).substring(0, 16);
-}
-
-/**
  * Create a hotel ID from Quendoo API key
  * Uses the API key to generate a consistent, unique identifier
  * @param {string} quendooApiKey - Quendoo API key
@@ -39,6 +29,5 @@ export function createHotelId(quendooApiKey) {
 
 export default {
   sha256,
-  createUserId,
   createHotelId
 };

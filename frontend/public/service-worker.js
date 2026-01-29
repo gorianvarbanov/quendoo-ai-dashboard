@@ -1,6 +1,6 @@
 // Service Worker for Quendoo AI PWA
-const CACHE_NAME = 'quendoo-ai-v1'
-const RUNTIME_CACHE = 'quendoo-ai-runtime'
+const CACHE_NAME = 'quendoo-ai-v2'
+const RUNTIME_CACHE = 'quendoo-ai-runtime-v2'
 
 // Assets to cache on install
 const PRECACHE_ASSETS = [
